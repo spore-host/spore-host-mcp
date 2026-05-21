@@ -1,0 +1,103 @@
+# GoReleaser configuration for spore-host/spore-host-mcp
+version: 2
+
+builds:
+  - id: spore-host-mcp
+    main: .
+    binary: spore-host-mcp
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: spore-host-mcp-archive
+    name_template: 'spore-host-mcp_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+nfpms:
+  - package_name: spore-host-mcp
+    vendor: spore.host
+    homepage: https://spore.host
+    maintainer: "spore.host <hello@spore.host>"
+    description: "MCP server for AI assistants — manage EC2 instances and discover capacity"
+    license: Apache-2.0
+    formats:
+      - deb
+      - rpm
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/spore-host-mcp/copyright
+        type: doc
+    rpm:
+      summary: "MCP server for AI assistants — manage EC2 instances and discover capacity"
+
+brews:
+  - name: spore-host-mcp
+    repository:
+      owner: spore-host
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/spore-host/spore-host-mcp
+    description: "MCP server for AI assistants — manage EC2 instances and discover capacity"
+    license: Apache-2.0
+    install: |
+      bin.install "spore-host-mcp"
+
+scoops:
+  - name: spore-host-mcp
+    repository:
+      owner: spore-host
+      name: scoop-bucket
+      branch: main
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    directory: bucket
+    homepage: https://github.com/spore-host/spore-host-mcp
+    description: "MCP server for AI assistants — manage EC2 instances and discover capacity"
+    license: Apache-2.0
+
+release:
+  github:
+    owner: spore-host
+    name: spore-host-mcp
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "v{{.Version}}"
