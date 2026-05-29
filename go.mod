@@ -4,8 +4,8 @@ go 1.26
 
 require (
 	github.com/mark3labs/mcp-go v0.49.0
-	github.com/spore-host/spawn v0.35.0
-	github.com/spore-host/truffle v0.35.0
+	github.com/spore-host/spawn v0.36.1
+	github.com/spore-host/truffle v0.36.1
 )
 
 require (
