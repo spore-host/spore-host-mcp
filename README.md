@@ -1,5 +1,11 @@
 # spore-host-mcp
 
+[![CI](https://github.com/spore-host/spore-host-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/spore-host/spore-host-mcp/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/spore-host/spore-host-mcp)](https://goreportcard.com/report/github.com/spore-host/spore-host-mcp)
+[![codecov](https://codecov.io/gh/spore-host/spore-host-mcp/branch/main/graph/badge.svg)](https://codecov.io/gh/spore-host/spore-host-mcp)
+[![Go Reference](https://pkg.go.dev/badge/github.com/spore-host/spore-host-mcp.svg)](https://pkg.go.dev/github.com/spore-host/spore-host-mcp)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 MCP server exposing truffle and spawn as tools for AI assistants.
 
 Works with Claude Desktop, Cursor, and any other client that supports the [Model Context Protocol](https://modelcontextprotocol.io).
