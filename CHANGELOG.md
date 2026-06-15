@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `spawn_extend` now writes the authoritative `spawn:ttl-deadline` tag (pushing
+  the absolute deadline forward, anchored to launch), not just `spawn:ttl`.
+  Previously the extend was a **silent no-op** — spored ignores `spawn:ttl` for
+  current instances, so the instance still terminated at its original deadline
+  despite the "✅ TTL updated" message. Mirrors the `spawn extend` CLI (#11).
+- Clarified the `spawn_extend` invalid-TTL error message (it garbled the
+  day/week-suffix guidance).
+
 ## [0.36.1]
 
 Baseline. Earlier history is in the

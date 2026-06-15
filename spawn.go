@@ -255,7 +255,7 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	region, _ := args["region"].(string)
 
 	if _, err := time.ParseDuration(newTTL); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("invalid TTL %q — use Go duration format, e.g. 2h, 24h, 7d is not valid (use 168h)", newTTL)), nil
+		return mcp.NewToolResultError(fmt.Sprintf("invalid TTL %q — use Go duration units (h/m/s), e.g. 2h, 24h, or 168h for a week (day/week suffixes like 7d are not supported)", newTTL)), nil
 	}
 
 	client, err := spawnClient(ctx)
@@ -268,13 +268,38 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	if err := client.UpdateInstanceTags(ctx, inst.Region, inst.InstanceID, map[string]string{
-		"spawn:ttl": newTTL,
-	}); err != nil {
+	// spored treats spawn:ttl-deadline (absolute) as authoritative and ignores
+	// spawn:ttl for current-vintage instances — so writing only spawn:ttl is a
+	// silent no-op: the instance still dies at its original deadline. Mirror the
+	// CLI (cmd/extend.go): push the absolute deadline forward (anchored to launch)
+	// and write BOTH tags. (#11)
+	extendDuration, err := time.ParseDuration(newTTL)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("invalid TTL %q: %v", newTTL, err)), nil
+	}
+	tags := map[string]string{"spawn:ttl": newTTL}
+	var newDeadline time.Time
+	if dl, ok := inst.Tags["spawn:ttl-deadline"]; ok {
+		if parsed, perr := time.Parse(time.RFC3339, dl); perr == nil {
+			newDeadline = parsed.Add(extendDuration)
+		}
+	}
+	if newDeadline.IsZero() {
+		// Older instance without the deadline tag — best-effort from current TTL.
+		if cur, cerr := time.ParseDuration(inst.TTL); cerr == nil {
+			newDeadline = time.Now().Add(cur).Add(extendDuration)
+		} else {
+			newDeadline = time.Now().Add(extendDuration)
+		}
+	}
+	tags["spawn:ttl-deadline"] = newDeadline.UTC().Format(time.RFC3339)
+
+	if err := client.UpdateInstanceTags(ctx, inst.Region, inst.InstanceID, tags); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("update TTL: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ %s TTL updated: %s → %s", inst.Name, inst.TTL, newTTL)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("✅ %s TTL extended by %s — new deadline %s",
+		inst.Name, newTTL, newDeadline.UTC().Format("2006-01-02 15:04 UTC"))), nil
 }
 
 func formatDuration(d time.Duration) string {
