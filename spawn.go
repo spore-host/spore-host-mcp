@@ -292,6 +292,12 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 			newDeadline = time.Now().Add(extendDuration)
 		}
 	}
+	// Safety floor: never set a deadline earlier than the requested duration from
+	// now — a past/expired existing deadline must not reap the instance the moment
+	// the user asks to extend it.
+	if floor := time.Now().Add(extendDuration); newDeadline.Before(floor) {
+		newDeadline = floor
+	}
 	tags["spawn:ttl-deadline"] = newDeadline.UTC().Format(time.RFC3339)
 
 	if err := client.UpdateInstanceTags(ctx, inst.Region, inst.InstanceID, tags); err != nil {
