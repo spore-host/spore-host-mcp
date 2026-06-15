@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Semgrep SAST is now **enforcing** in CI (`--config=auto --error`) rather than
+  report-only (#368). The scan was already clean — no findings to triage.
+
 ### Fixed
 - `spawn_extend` now writes the authoritative `spawn:ttl-deadline` tag (pushing
   the absolute deadline forward, anchored to launch), not just `spawn:ttl`.
