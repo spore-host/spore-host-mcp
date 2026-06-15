@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Previously the extend was a **silent no-op** — spored ignores `spawn:ttl` for
   current instances, so the instance still terminated at its original deadline
   despite the "✅ TTL updated" message. Mirrors the `spawn extend` CLI (#11).
+- `spawn_extend` floors the new deadline at `now + requested-duration`, so an
+  already-expired `spawn:ttl-deadline` can't set a deadline in the past and reap
+  the instance the moment you extend it (spore-host#374).
 - Clarified the `spawn_extend` invalid-TTL error message (it garbled the
   day/week-suffix guidance).
 
