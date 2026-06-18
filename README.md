@@ -45,15 +45,15 @@ For Cursor: `.cursor/mcp.json`
 ## Tools exposed
 
 **truffle tools** — EC2 discovery (no credentials required):
-- `truffle_search` — search instance types
-- `truffle_find` — natural language search
-- `truffle_spot` — spot prices
+- `truffle_find` — natural language instance search
+- `truffle_spot_prices` — spot prices for an instance type
+- `truffle_quota_check` — check EC2 service quotas
 
 **spawn tools** — instance lifecycle (requires AWS credentials):
-- `spawn_list` — list running instances
-- `spawn_launch` — launch an instance
-- `spawn_connect` — connect to an instance
+- `spawn_list` — list instances
 - `spawn_status` — instance status and TTL
+- `spawn_stop` — stop a running instance
+- `spawn_terminate` — terminate an instance
 - `spawn_extend` — extend TTL
 
 ## Documentation

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- README "Tools exposed" list now matches the registered tools: `truffle_find`,
+  `truffle_spot_prices`, `truffle_quota_check`, `spawn_list`, `spawn_status`,
+  `spawn_stop`, `spawn_terminate`, `spawn_extend`. Removes tools that were never
+  registered (`truffle_search`, `spawn_launch`, `spawn_connect`) and fixes
+  `truffle_spot` → `truffle_spot_prices`.
+
 ### Security
 - Semgrep SAST is now **enforcing** in CI (`--config=auto --error`) rather than
   report-only (#368). The scan was already clean — no findings to triage.
