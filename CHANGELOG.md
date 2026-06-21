@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `spawn_list` with `state=all` now works (#12). The value was passed straight
+  through as an EC2 `instance-state-name` filter — no such state, so it matched
+  nothing and hid stopped (still-EBS-billing) instances. `all` now maps to "no
+  state filter", and the state arg is validated against `running`/`stopped`/`all`.
+
+### Security
+- `spawn_terminate` is no longer a one-shot destructive call (#12). It now
+  requires `confirm=true` (the first call previews the exact instance), refuses
+  an **ambiguous name** that matches more than one instance (requires the
+  instance ID), and audit-logs every termination to stderr — matching the CLI.
+  `findInstance` previously returned the first case-insensitive name match, so
+  an ambiguous name could silently terminate an arbitrary instance.
+
 ### Documentation
 - README "Tools exposed" list now matches the registered tools: `truffle_find`,
   `truffle_spot_prices`, `truffle_quota_check`, `spawn_list`, `spawn_status`,

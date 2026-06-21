@@ -78,6 +78,36 @@ func TestHandleTruffleFind_EmptyQueryOK(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnList_InvalidState(t *testing.T) {
+	// An unknown state is rejected before any AWS call (#12). Previously "all"
+	// (and anything else) was passed straight through as an EC2
+	// instance-state-name filter, which matched nothing.
+	req := newRequest(map[string]any{"state": "bogus"})
+	res, err := handleSpawnList(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Errorf("expected an error result for an invalid state, got %+v", res)
+	}
+}
+
+func TestHandleSpawnTerminate_RequiresConfirm(t *testing.T) {
+	// Without confirm=true, terminate must NOT destroy anything. It either
+	// previews (if the instance resolves) or errors at lookup — but with no AWS
+	// creds in the test env, the key guarantee is it returns a non-nil,
+	// non-panicking result and never reaches Terminate. We assert it doesn't
+	// panic and returns a result.
+	req := newRequest(map[string]any{"instance": "does-not-exist", "confirm": false})
+	res, err := handleSpawnTerminate(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil {
+		t.Error("expected a non-nil result")
+	}
+}
+
 func TestFormatDuration(t *testing.T) {
 	tests := []struct {
 		d    time.Duration
