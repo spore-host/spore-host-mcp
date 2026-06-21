@@ -14,6 +14,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nothing and hid stopped (still-EBS-billing) instances. `all` now maps to "no
   state filter", and the state arg is validated against `running`/`stopped`/`all`.
 
+### Changed
+- Bumped the `spawn` (v0.36.1 → v0.62.0) and `truffle` (v0.36.1 → v0.41.0)
+  dependencies, which were badly behind the rest of the suite (#13).
+
+### Documentation
+- Corrected the false "no credentials required" claim on the truffle tools — they
+  call the EC2 and Service Quotas APIs and require AWS credentials (#13).
+- `spawn_extend`'s `ttl` description no longer advertises `7d`: the handler (like
+  the spawn CLI's `extend`) parses Go duration units only, so `7d` was rejected;
+  the description now says h/m/s (e.g. `168h` for a week) (#13).
+
 ### Security
 - `spawn_terminate` is no longer a one-shot destructive call (#12). It now
   requires `confirm=true` (the first call previews the exact instance), refuses

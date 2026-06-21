@@ -78,7 +78,7 @@ func registerSpawnTools(s *server.MCPServer) {
 			mcp.Required(),
 		),
 		mcp.WithString("ttl",
-			mcp.Description("New TTL value (e.g. 2h, 24h, 7d). Replaces the current TTL."),
+			mcp.Description("New TTL value in Go duration units — h/m/s only (e.g. 2h, 24h, 168h for a week). Day/week suffixes like 7d are not supported. Replaces the current TTL."),
 			mcp.Required(),
 		),
 		mcp.WithString("region",

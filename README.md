@@ -44,7 +44,7 @@ For Cursor: `.cursor/mcp.json`
 
 ## Tools exposed
 
-**truffle tools** — EC2 discovery (no credentials required):
+**truffle tools** — EC2 discovery (require AWS credentials; these call the EC2 and Service Quotas APIs):
 - `truffle_find` — natural language instance search
 - `truffle_spot_prices` — spot prices for an instance type
 - `truffle_quota_check` — check EC2 service quotas
