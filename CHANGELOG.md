@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Honors the shared spore.host config base.** Bumped spawn (v0.76.0 → v0.77.0)
+  and truffle (v0.43.0 → v0.44.0), which adopted `libs/sporeconfig`. The MCP
+  server now resolves the AWS profile/region the same way as the rest of the
+  suite — `SPORE_PROFILE`/`SPORE_REGION` (and `AWS_PROFILE`/`AWS_REGION`) plus the
+  `[spore]` table of `~/.config/spore/config.toml` — through spawn's and truffle's
+  client constructors, with no MCP-side config code. Unset = unchanged (ambient
+  AWS chain).
+
 ### Fixed
 - `spawn_list` with `state=all` now works (#12). The value was passed straight
   through as an EC2 `instance-state-name` filter — no such state, so it matched
