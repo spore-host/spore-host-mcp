@@ -15,8 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state filter", and the state arg is validated against `running`/`stopped`/`all`.
 
 ### Changed
-- Bumped the `spawn` (v0.36.1 → v0.62.0) and `truffle` (v0.36.1 → v0.41.0)
-  dependencies, which were badly behind the rest of the suite (#13).
+- Bumped the `spawn` (v0.36.1 → v0.76.0) and `truffle` (v0.36.1 → v0.43.0)
+  dependencies up to the current suite; they had drifted well behind (#13).
+
+### Security
+- Pinned all GitHub Actions to commit SHAs (were mutable `@vN`/`@master` tags),
+  matching the suite-wide convention and clearing the Semgrep
+  mutable-action-tag findings.
+
+### Added
+- Test coverage for the `spawn_extend`/`spawn_status`/`spawn_stop` lifecycle
+  handlers (#13): `spawn_extend` rejects a non-Go-duration TTL like `7d` before any
+  AWS call, and status/stop have smoke coverage that they return cleanly without
+  panicking. Previously none of the spawn lifecycle handlers were tested.
 
 ### Documentation
 - Corrected the false "no credentials required" claim on the truffle tools — they
