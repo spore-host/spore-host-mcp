@@ -4,8 +4,8 @@ go 1.26
 
 require (
 	github.com/mark3labs/mcp-go v0.49.0
-	github.com/spore-host/spawn v0.62.0
-	github.com/spore-host/truffle v0.41.0
+	github.com/spore-host/spawn v0.76.0
+	github.com/spore-host/truffle v0.43.0
 )
 
 require (
@@ -20,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.29 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.24 // indirect
 	github.com/aws/aws-sdk-go-v2/service/account v1.32.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.73.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.57.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ebs v1.34.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.301.0 // indirect
@@ -32,6 +33,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.23 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.23 // indirect
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.42.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.33.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.101.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.34.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.11 // indirect
@@ -53,7 +55,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spore-host/libs v0.37.1 // indirect
+	github.com/spore-host/libs v0.41.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

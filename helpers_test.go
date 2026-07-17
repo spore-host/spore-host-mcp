@@ -129,3 +129,58 @@ func TestFormatDuration(t *testing.T) {
 		}
 	}
 }
+
+// TestHandleSpawnExtend_RejectsBadTTL verifies the extend handler validates the
+// TTL BEFORE any AWS call: a Go-duration-invalid value like "7d" (day suffixes
+// aren't supported) is rejected with a clear error, and a valid one passes the
+// parse gate (then fails at AWS lookup in the credential-less test env, which is
+// fine — the point is it got past validation without panicking). (#13)
+func TestHandleSpawnExtend_RejectsBadTTL(t *testing.T) {
+	// "7d" is not a Go duration — must be rejected up front.
+	req := newRequest(map[string]any{"instance": "i-abc", "ttl": "7d"})
+	res, err := handleSpawnExtend(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Fatalf("expected an error result for TTL %q, got %+v", "7d", res)
+	}
+
+	// An empty TTL is also invalid (time.ParseDuration("") fails).
+	req = newRequest(map[string]any{"instance": "i-abc", "ttl": ""})
+	res, err = handleSpawnExtend(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Errorf("expected an error result for an empty TTL, got %+v", res)
+	}
+}
+
+// TestHandleSpawnStatus_NoPanic and TestHandleSpawnStop_NoPanic assert the
+// status/stop handlers return a non-nil, non-panicking result in the
+// credential-less test env (they resolve no instance and error cleanly), so the
+// lifecycle handlers have at least smoke coverage (#13).
+func TestHandleSpawnStatus_NoPanic(t *testing.T) {
+	req := newRequest(map[string]any{"instance": "does-not-exist"})
+	res, err := handleSpawnStatus(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil {
+		t.Error("expected a non-nil result")
+	}
+}
+
+func TestHandleSpawnStop_NoPanic(t *testing.T) {
+	// hibernate=false; without creds this resolves no instance and errors — it
+	// must never panic or reach StopInstance.
+	req := newRequest(map[string]any{"instance": "does-not-exist", "hibernate": false})
+	res, err := handleSpawnStop(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler transport error: %v", err)
+	}
+	if res == nil {
+		t.Error("expected a non-nil result")
+	}
+}
