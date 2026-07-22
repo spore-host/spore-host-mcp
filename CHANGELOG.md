@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-07-22
+
 ### Added
 - `spawn_status` now shows the absolute reap **Deadline** (from the authoritative
   `spawn:ttl-deadline` tag) and how far off it is, so the actual death time is
@@ -119,6 +121,7 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/spore-host/spore-host-mcp/releases/tag/v0.36.1
