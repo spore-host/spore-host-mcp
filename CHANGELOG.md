@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-07-22
+
 ### Added
 - `truffle_find` now shows a **"Why:"** line per result — human-readable match
   reasons (e.g. `GPU family: NVIDIA; Memory: 1152 GiB >= 40 GiB`) from truffle's
@@ -133,7 +135,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/spore-host/spore-host-mcp/releases/tag/v0.36.1
