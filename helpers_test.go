@@ -3,12 +3,42 @@ package main
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	spawnclient "github.com/spore-host/spawn/pkg/aws"
 )
+
+// TestExactTypeMatcher guards the fix for the nil-matcher crash: truffle's
+// SearchInstanceTypes panics (nil-pointer deref in its per-region goroutine) when
+// handed a nil matcher, which — in this in-process stdio server — crashes the whole
+// server and disconnects every tool. The spot-price and quota-check handlers must
+// therefore always pass a real, anchored, literal matcher for a single type.
+func TestExactTypeMatcher(t *testing.T) {
+	re := exactTypeMatcher("g5.2xlarge")
+	if re == nil {
+		t.Fatal("exactTypeMatcher returned nil — SearchInstanceTypes would panic")
+	}
+	if !re.MatchString("g5.2xlarge") {
+		t.Errorf("matcher %q did not match its own type", re.String())
+	}
+	// The dot must be literal, not the regexp any-char — g5x2xlarge must NOT match.
+	if re.MatchString("g5x2xlarge") {
+		t.Errorf("matcher %q treated '.' as a wildcard", re.String())
+	}
+	// Anchored: a superstring must not match.
+	if re.MatchString("g5.2xlarge.extra") {
+		t.Errorf("matcher %q is not anchored", re.String())
+	}
+	// The pattern must be recognisable as an exact type (anchors + escaped dot),
+	// so truffle uses the API-side filter instead of enumerating every type.
+	if got := re.String(); got != `^g5\.2xlarge$` {
+		t.Errorf("matcher pattern = %q, want %q", got, `^g5\.2xlarge$`)
+	}
+}
 
 func TestParseRegions(t *testing.T) {
 	tests := []struct {
@@ -182,5 +212,84 @@ func TestHandleSpawnStop_NoPanic(t *testing.T) {
 	}
 	if res == nil {
 		t.Error("expected a non-nil result")
+	}
+}
+
+// TestSelectInstance covers the #12 safety guarantee: an exact instance-ID match
+// wins, a lone name match resolves, but a name shared by more than one instance is
+// REFUSED (never acted on arbitrarily) — this is what stops spawn_terminate from
+// destroying the wrong box.
+func TestSelectInstance(t *testing.T) {
+	instances := []spawnclient.InstanceInfo{
+		{InstanceID: "i-aaa", Name: "gpu", Region: "us-east-1", State: "running"},
+		{InstanceID: "i-bbb", Name: "gpu", Region: "us-west-2", State: "stopped"},
+		{InstanceID: "i-ccc", Name: "solo", Region: "us-east-1", State: "running"},
+	}
+
+	// Exact ID wins even when a name is also ambiguous.
+	got, err := selectInstance(instances, "i-bbb")
+	if err != nil || got == nil || got.InstanceID != "i-bbb" {
+		t.Fatalf("ID match: got %+v, err %v", got, err)
+	}
+
+	// Unique name resolves (case-insensitive).
+	got, err = selectInstance(instances, "SOLO")
+	if err != nil || got == nil || got.InstanceID != "i-ccc" {
+		t.Fatalf("unique name match: got %+v, err %v", got, err)
+	}
+
+	// Ambiguous name is refused, and the error names both candidates + says to use
+	// the ID — a silent pick here could terminate the wrong instance.
+	got, err = selectInstance(instances, "gpu")
+	if err == nil || got != nil {
+		t.Fatalf("ambiguous name must error, got %+v, err %v", got, err)
+	}
+	for _, want := range []string{"ambiguous", "i-aaa", "i-bbb", "instance ID"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ambiguity error %q missing %q", err.Error(), want)
+		}
+	}
+
+	// No match errors cleanly.
+	if _, err := selectInstance(instances, "nope"); err == nil {
+		t.Error("expected not-found error for an unknown name")
+	}
+}
+
+// TestComputeExtendedDeadline covers the #11 fix: extend must push the AUTHORITATIVE
+// absolute spawn:ttl-deadline forward (spored ignores the relative spawn:ttl), and
+// an already-expired deadline must never yield a past deadline that reaps the box the
+// instant you extend it (the safety floor, spore-host#374).
+func TestComputeExtendedDeadline(t *testing.T) {
+	now := time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC)
+
+	// Existing future deadline is pushed forward by exactly the extend duration
+	// (anchored to the deadline, not to now).
+	existing := now.Add(3 * time.Hour).Format(time.RFC3339)
+	got := computeExtendedDeadline(existing, "", 2*time.Hour, now)
+	if want := now.Add(5 * time.Hour); !got.Equal(want) {
+		t.Errorf("future deadline: got %v, want %v", got, want)
+	}
+
+	// An already-expired deadline must floor at now+extend, not push into the past.
+	expired := now.Add(-10 * time.Hour).Format(time.RFC3339)
+	got = computeExtendedDeadline(expired, "", 2*time.Hour, now)
+	if want := now.Add(2 * time.Hour); !got.Equal(want) {
+		t.Errorf("expired deadline floor: got %v, want %v", got, want)
+	}
+	if got.Before(now) {
+		t.Errorf("expired deadline produced a PAST deadline %v (would reap immediately)", got)
+	}
+
+	// No deadline tag, but a current TTL — best-effort from now+TTL+extend.
+	got = computeExtendedDeadline("", "1h", 2*time.Hour, now)
+	if want := now.Add(3 * time.Hour); !got.Equal(want) {
+		t.Errorf("TTL fallback: got %v, want %v", got, want)
+	}
+
+	// Nothing usable — now+extend.
+	got = computeExtendedDeadline("", "", 4*time.Hour, now)
+	if want := now.Add(4 * time.Hour); !got.Equal(want) {
+		t.Errorf("bare fallback: got %v, want %v", got, want)
 	}
 }

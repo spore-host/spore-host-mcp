@@ -8,6 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `spawn_status` now shows the absolute reap **Deadline** (from the authoritative
+  `spawn:ttl-deadline` tag) and how far off it is, so the actual death time is
+  visible rather than inferred from the relative TTL (#21).
+- Unit tests for the two safety-critical behaviors that previously had none (#21):
+  `spawn_terminate`/`spawn_stop` **ambiguous-name refusal** (`selectInstance`) and
+  `spawn_extend`'s **deadline-forward + expired-deadline floor**
+  (`computeExtendedDeadline`), both now pure/AWS-free and directly tested.
+
+### Fixed
+- **`truffle_spot_prices` and `truffle_quota_check` crashed the entire server**
+  (#21). Both passed a `nil` matcher to truffle's `SearchInstanceTypes`, which
+  dereferences it inside a per-region goroutine (`extractSpecificTypes`) → SIGSEGV.
+  Because this is an in-process stdio server, that panic killed the whole process
+  and disconnected **all** tools, not just the failing call. Both now pass an
+  anchored, literal single-type matcher. As a bonus this lets truffle use the
+  `DescribeInstanceTypes` API-side type filter instead of enumerating every
+  instance type in the region, so these tools are also much faster.
+
+### Changed
+- `truffle_spot_prices` / `truffle_quota_check` look up the requested type via an
+  API-side filter (anchored matcher) rather than a full region enumeration (#21).
+
 ## [0.37.0] - 2026-07-22
 
 ### Security
