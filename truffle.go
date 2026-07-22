@@ -13,6 +13,12 @@ import (
 	"github.com/spore-host/truffle/pkg/quotas"
 )
 
+// maxFindResults caps how many instance-type matches truffle_find renders. A
+// broad query can match hundreds of type×region rows; truffle returns them in
+// preference order, so the top slice is the useful part and the rest only bloat
+// the tool result. The caller is told to narrow the query when it's clipped.
+const maxFindResults = 25
+
 // exactTypeMatcher builds an anchored, literal regexp matching one instance type.
 //
 // truffle's SearchInstanceTypes REQUIRES a non-nil matcher: a nil matcher panics
@@ -119,9 +125,18 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultText(fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))), nil
 	}
 
-	// Optionally fetch spot prices
+	// Cap the rendered results. A broad query ("gpu", "arm64") can match hundreds
+	// of type×region rows; dumping them all bloats the tool result (and the spot
+	// fetch below). Keep the top maxFindResults — truffle already returns them in
+	// its preference order — and tell the caller to narrow the query for the rest.
+	total := len(results)
+	if len(results) > maxFindResults {
+		results = results[:maxFindResults]
+	}
+
+	// Optionally fetch spot prices (only for the results we'll actually render).
 	var spotPrices []truffleaws.SpotPriceResult
-	if withSpot && len(results) > 0 {
+	if withSpot {
 		spotPrices, _ = client.GetSpotPricing(ctx, results, truffleaws.SpotOptions{ShowSavings: true})
 	}
 	spotByType := make(map[string]truffleaws.SpotPriceResult)
@@ -129,8 +144,20 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		spotByType[sp.InstanceType] = sp
 	}
 
+	return mcp.NewToolResultText(renderFindResults(query, results, total, spotByType, pq)), nil
+}
+
+// renderFindResults formats truffle_find output. results is the (already-capped)
+// slice to render; total is the full match count before capping, so the header
+// can flag truncation. Pure/AWS-free so the cap + truncation-note behavior is
+// unit-testable.
+func renderFindResults(query string, results []truffleaws.InstanceTypeResult, total int, spotByType map[string]truffleaws.SpotPriceResult, pq *find.ParsedQuery) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d instance type(s) matching %q:\n\n", len(results), query))
+	if total > len(results) {
+		sb.WriteString(fmt.Sprintf("Found %d instance type(s) matching %q (showing the top %d — narrow the query for the rest):\n\n", total, query, len(results)))
+	} else {
+		sb.WriteString(fmt.Sprintf("Found %d instance type(s) matching %q:\n\n", total, query))
+	}
 
 	for _, r := range results {
 		sb.WriteString(fmt.Sprintf("**%s** (%s)\n", r.InstanceType, r.Region))
@@ -150,10 +177,16 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		if len(r.AvailableAZs) > 0 {
 			sb.WriteString(fmt.Sprintf("  Available AZs: %s\n", strings.Join(r.AvailableAZs, ", ")))
 		}
+		// Human-readable match reasons ("GPU: A100 (80 GiB, training)", "memory ≥
+		// 64 GiB") from truffle — tells the caller WHY each type matched, which is
+		// far more useful to an assistant than the bare specs.
+		if reasons := find.ExplainMatch(r, pq); len(reasons) > 0 {
+			sb.WriteString(fmt.Sprintf("  Why: %s\n", strings.Join(reasons, "; ")))
+		}
 		sb.WriteString("\n")
 	}
 
-	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
+	return strings.TrimRight(sb.String(), "\n")
 }
 
 func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
