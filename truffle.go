@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -11,6 +12,23 @@ import (
 	"github.com/spore-host/truffle/pkg/find"
 	"github.com/spore-host/truffle/pkg/quotas"
 )
+
+// exactTypeMatcher builds an anchored, literal regexp matching one instance type.
+//
+// truffle's SearchInstanceTypes REQUIRES a non-nil matcher: a nil matcher panics
+// (nil-pointer deref) inside its per-region goroutine at extractSpecificTypes,
+// which — because this is an in-process stdio server — crashes the whole server
+// and disconnects every tool, not just this call. So the spot-price and
+// quota-check paths (which look up a single named type) must pass a real matcher.
+// (Upstream nil-guard tracked in spore-host/truffle#106.)
+//
+// Anchoring with QuoteMeta also lets truffle's extractSpecificTypes recognise an
+// exact type and push it into the DescribeInstanceTypes API-side InstanceTypes
+// filter, instead of enumerating every instance type in the region and filtering
+// in Go — far fewer/lighter API calls.
+func exactTypeMatcher(instanceType string) *regexp.Regexp {
+	return regexp.MustCompile("^" + regexp.QuoteMeta(instanceType) + "$")
+}
 
 func registerTruffleTools(s *server.MCPServer) {
 	s.AddTool(mcp.NewTool("truffle_find",
@@ -150,8 +168,10 @@ func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
 
-	// Search for this exact instance type first to get metadata
-	results, err := client.SearchInstanceTypes(ctx, regions, nil, truffleaws.FilterOptions{})
+	// Search for this exact instance type first to get metadata. Pass an anchored
+	// matcher (never nil — see exactTypeMatcher) so truffle uses the API-side type
+	// filter and doesn't panic.
+	results, err := client.SearchInstanceTypes(ctx, regions, exactTypeMatcher(strings.ToLower(instanceType)), truffleaws.FilterOptions{})
 	if err != nil {
 		return mcp.NewToolResultError("search failed: " + err.Error()), nil
 	}
@@ -210,7 +230,9 @@ func handleTruffleQuotaCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	if err != nil {
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
-	results, err := trClient.SearchInstanceTypes(ctx, []string{region}, nil, truffleaws.FilterOptions{})
+	// Anchored matcher (never nil — see exactTypeMatcher): API-side type filter,
+	// and avoids the nil-matcher panic that would crash the whole server.
+	results, err := trClient.SearchInstanceTypes(ctx, []string{region}, exactTypeMatcher(strings.ToLower(instanceType)), truffleaws.FilterOptions{})
 	if err != nil {
 		return mcp.NewToolResultError("instance type lookup failed: " + err.Error()), nil
 	}

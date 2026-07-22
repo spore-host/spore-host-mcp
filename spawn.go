@@ -103,7 +103,16 @@ func findInstance(ctx context.Context, client *spawnclient.Client, nameOrID, reg
 	if err != nil {
 		return nil, fmt.Errorf("list instances: %w", err)
 	}
+	return selectInstance(instances, nameOrID)
+}
 
+// selectInstance resolves a name-or-ID against a list of instances. It is the
+// pure, AWS-free core of findInstance so the ambiguity guarantee can be unit
+// tested. An exact instance-ID match is unique and wins immediately; a name match
+// collects ALL matches and refuses to guess when more than one instance shares the
+// name — returning an ambiguity error rather than acting on an arbitrary one. This
+// matters most for the destructive tools (#12).
+func selectInstance(instances []spawnclient.InstanceInfo, nameOrID string) (*spawnclient.InstanceInfo, error) {
 	var nameMatches []*spawnclient.InstanceInfo
 	for i := range instances {
 		inst := &instances[i]
@@ -234,6 +243,22 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	if inst.TTL != "" {
 		sb.WriteString(fmt.Sprintf("TTL:      %s\n", inst.TTL))
 	}
+	// spored reaps on the absolute spawn:ttl-deadline, not the relative TTL — so
+	// surface the actual death time (and how far off it is) rather than leaving the
+	// reader to guess. This is the value spawn_extend pushes forward.
+	if dl, ok := inst.Tags["spawn:ttl-deadline"]; ok && dl != "" {
+		if deadline, perr := time.Parse(time.RFC3339, dl); perr == nil {
+			remaining := time.Until(deadline)
+			when := deadline.UTC().Format("2006-01-02 15:04 UTC")
+			if remaining > 0 {
+				sb.WriteString(fmt.Sprintf("Deadline: %s (in %s)\n", when, formatDuration(remaining)))
+			} else {
+				sb.WriteString(fmt.Sprintf("Deadline: %s (expired)\n", when))
+			}
+		} else {
+			sb.WriteString(fmt.Sprintf("Deadline: %s\n", dl))
+		}
+	}
 	if inst.IdleTimeout != "" {
 		sb.WriteString(fmt.Sprintf("Idle timeout: %s\n", inst.IdleTimeout))
 	}
@@ -348,28 +373,11 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("invalid TTL %q: %v", newTTL, err)), nil
 	}
-	tags := map[string]string{"spawn:ttl": newTTL}
-	var newDeadline time.Time
-	if dl, ok := inst.Tags["spawn:ttl-deadline"]; ok {
-		if parsed, perr := time.Parse(time.RFC3339, dl); perr == nil {
-			newDeadline = parsed.Add(extendDuration)
-		}
+	newDeadline := computeExtendedDeadline(inst.Tags["spawn:ttl-deadline"], inst.TTL, extendDuration, time.Now())
+	tags := map[string]string{
+		"spawn:ttl":          newTTL,
+		"spawn:ttl-deadline": newDeadline.UTC().Format(time.RFC3339),
 	}
-	if newDeadline.IsZero() {
-		// Older instance without the deadline tag — best-effort from current TTL.
-		if cur, cerr := time.ParseDuration(inst.TTL); cerr == nil {
-			newDeadline = time.Now().Add(cur).Add(extendDuration)
-		} else {
-			newDeadline = time.Now().Add(extendDuration)
-		}
-	}
-	// Safety floor: never set a deadline earlier than the requested duration from
-	// now — a past/expired existing deadline must not reap the instance the moment
-	// the user asks to extend it.
-	if floor := time.Now().Add(extendDuration); newDeadline.Before(floor) {
-		newDeadline = floor
-	}
-	tags["spawn:ttl-deadline"] = newDeadline.UTC().Format(time.RFC3339)
 
 	if err := client.UpdateInstanceTags(ctx, inst.Region, inst.InstanceID, tags); err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("update TTL: %v", err)), nil
@@ -377,6 +385,34 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 
 	return mcp.NewToolResultText(fmt.Sprintf("✅ %s TTL extended by %s — new deadline %s",
 		inst.Name, newTTL, newDeadline.UTC().Format("2006-01-02 15:04 UTC"))), nil
+}
+
+// computeExtendedDeadline returns the new absolute TTL deadline for an extend.
+//
+// spored treats spawn:ttl-deadline (absolute) as authoritative and ignores
+// spawn:ttl for current-vintage instances, so an extend MUST push the deadline
+// forward. Preference order:
+//   - a parseable existing deadline is pushed forward by extendDuration (anchored
+//     to launch, matching the spawn extend CLI);
+//   - otherwise (older instance, or unparseable) best-effort from the current TTL;
+//   - otherwise now+extendDuration.
+//
+// A safety floor guarantees the result is never earlier than now+extendDuration —
+// an already-expired existing deadline must not reap the instance the moment the
+// user asks to extend it (spore-host#374). now is a parameter for testability.
+func computeExtendedDeadline(existingDeadline, currentTTL string, extendDuration time.Duration, now time.Time) time.Time {
+	var newDeadline time.Time
+	if parsed, perr := time.Parse(time.RFC3339, existingDeadline); perr == nil {
+		newDeadline = parsed.Add(extendDuration)
+	} else if cur, cerr := time.ParseDuration(currentTTL); cerr == nil {
+		newDeadline = now.Add(cur).Add(extendDuration)
+	} else {
+		newDeadline = now.Add(extendDuration)
+	}
+	if floor := now.Add(extendDuration); newDeadline.Before(floor) {
+		newDeadline = floor
+	}
+	return newDeadline
 }
 
 func formatDuration(d time.Duration) string {
