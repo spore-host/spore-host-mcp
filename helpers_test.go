@@ -10,6 +10,8 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	spawnclient "github.com/spore-host/spawn/pkg/aws"
+	truffleaws "github.com/spore-host/truffle/pkg/aws"
+	"github.com/spore-host/truffle/pkg/find"
 )
 
 // TestExactTypeMatcher guards the fix for the nil-matcher crash: truffle's
@@ -253,6 +255,40 @@ func TestSelectInstance(t *testing.T) {
 	// No match errors cleanly.
 	if _, err := selectInstance(instances, "nope"); err == nil {
 		t.Error("expected not-found error for an unknown name")
+	}
+}
+
+// TestRenderFindResults covers the truffle_find result cap: when the full match
+// count exceeds what's rendered, the header must say so and point the caller to
+// narrow the query; otherwise it reports the plain count. Also checks the "Why:"
+// match-reason line is emitted.
+func TestRenderFindResults(t *testing.T) {
+	pq, err := find.ParseQuery("gpu")
+	if err != nil {
+		t.Fatalf("ParseQuery: %v", err)
+	}
+	results := []truffleaws.InstanceTypeResult{
+		{InstanceType: "g5.2xlarge", Region: "us-east-1", VCPUs: 8, MemoryMiB: 32768, Architecture: "x86_64", GPUs: 1, GPUModel: "A10G", GPUManufacturer: "nvidia"},
+	}
+
+	// Not truncated: total == len(results).
+	out := renderFindResults("gpu", results, len(results), nil, pq)
+	if !strings.Contains(out, "Found 1 instance type(s)") {
+		t.Errorf("plain header missing, got: %q", out)
+	}
+	if strings.Contains(out, "showing the top") {
+		t.Errorf("unexpected truncation note when not truncated: %q", out)
+	}
+	if !strings.Contains(out, "**g5.2xlarge** (us-east-1)") {
+		t.Errorf("result block missing: %q", out)
+	}
+
+	// Truncated: total (200) > rendered (1) → header flags it and says to narrow.
+	out = renderFindResults("gpu", results, 200, nil, pq)
+	if !strings.Contains(out, "Found 200 instance type(s)") ||
+		!strings.Contains(out, "showing the top 1") ||
+		!strings.Contains(out, "narrow the query") {
+		t.Errorf("truncation header wrong, got: %q", out)
 	}
 }
 

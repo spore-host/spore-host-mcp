@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `truffle_find` now shows a **"Why:"** line per result — human-readable match
+  reasons (e.g. `GPU family: NVIDIA; Memory: 1152 GiB >= 40 GiB`) from truffle's
+  `ExplainMatch` — so an assistant can see why each type matched, not just its
+  specs.
+
+### Changed
+- `truffle_find` caps output at the top 25 matches (in truffle's preference
+  order) and flags truncation with a "narrow the query" hint. A broad query
+  ("gpu", "arm64") previously rendered every type×region row, bloating the tool
+  result and the spot-price fetch.
+
 ## [0.38.0] - 2026-07-22
 
 ### Added
