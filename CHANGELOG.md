@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- README now documents the `spawn_terminate` two-phase `confirm=true` flow and
+  its ambiguous-name refusal (the server's core safety behavior, previously only
+  in the in-protocol tool description), the deliberate no-launch boundary, and
+  the credential/config options (`SPORE_PROFILE`/`SPORE_REGION` +
+  `~/.config/spore/config.toml`) added with the shared config base.
+
 ## [0.39.0] - 2026-07-22
 
 ### Added
