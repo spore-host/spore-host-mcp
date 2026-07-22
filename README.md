@@ -51,10 +51,28 @@ For Cursor: `.cursor/mcp.json`
 
 **spawn tools** — instance lifecycle (requires AWS credentials):
 - `spawn_list` — list instances
-- `spawn_status` — instance status and TTL
+- `spawn_status` — instance status, TTL, and absolute reap deadline
 - `spawn_stop` — stop a running instance
 - `spawn_terminate` — terminate an instance
 - `spawn_extend` — extend TTL
+
+There is **no launch tool, by design** — the server is read + manage-existing
+only. Creating billable instances from an assistant is a boundary spore.host
+doesn't cross automatically; the assistant helps you *construct* the `spawn
+launch` command and you run it.
+
+`spawn_terminate` is **two-phase**: the first call previews the exact instance
+that would be destroyed, and only a second call with `confirm=true` actually
+terminates it. An ambiguous name (matching more than one instance) is refused —
+use the instance ID — so the assistant can never terminate the wrong box.
+
+## Credentials
+
+The server uses your ambient AWS credential chain — the same one the CLIs use
+(`AWS_PROFILE`/`AWS_REGION`, `~/.aws/…`, or instance metadata). It also honors
+the shared spore.host config base: `SPORE_PROFILE`/`SPORE_REGION` and the
+`[spore]` table of `~/.config/spore/config.toml`. No MCP-specific setup is
+needed if the CLI already works.
 
 ## Documentation
 
