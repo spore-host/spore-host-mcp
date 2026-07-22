@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-07-22
+
 ### Security
 - **Bump `google.golang.org/grpc` → 1.82.1** (indirect) — resolves
   GHSA-hrxh-6v49-42gf (gRPC-Go xDS RBAC / HTTP/2, HIGH).
@@ -94,5 +96,6 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.36.1...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.36.1...v0.37.0
 [0.36.1]: https://github.com/spore-host/spore-host-mcp/releases/tag/v0.36.1
