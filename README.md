@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/spore-host-mcp-hero.png" alt="spore-host-mcp — spore.host tools for AI assistants via MCP" width="820">
+</p>
+
 # spore-host-mcp
 
 [![CI](https://github.com/spore-host/spore-host-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/spore-host/spore-host-mcp/actions/workflows/ci.yml)
