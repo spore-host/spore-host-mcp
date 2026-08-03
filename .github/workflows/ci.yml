@@ -26,6 +26,27 @@ jobs:
         with:
           go-version: '1.26'
           cache: true
+      # Formatting gate (#26). Runs first because it's the cheapest check and the
+      # fastest to act on. Nothing checked formatting before — this repo has no
+      # Makefile, so there wasn't even a local `fmt` target anyone might run. The
+      # tree happened to be clean when this landed; the gate is what keeps it
+      # that way (the siblings drifted for months without one — spawn#484 had 3
+      # files unformatted, truffle#122 had 7).
+      #
+      # The key property is that it REPORTS rather than fixes: `gofmt -w`
+      # rewrites files and exits 0, so a gate built on it could only ever report
+      # success. gofmt walks paths rather than modules, so this covers everything.
+      - name: Format gate
+        run: |
+          files=$(gofmt -l . | grep -v '^vendor/' || true)
+          if [ -n "$files" ]; then
+            echo "::error::these files are not gofmt-clean — run 'gofmt -w' on them:"
+            echo "$files" | sed 's/^/  /'
+            gofmt -d $files
+            exit 1
+          fi
+          echo "✓ gofmt clean"
+
       - name: Build
         run: go build ./...
       - name: Test
