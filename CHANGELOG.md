@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CI now fails on unformatted code (#26).** Nothing did before: the workflow had
+  no formatting step, and this repo has no Makefile, so there wasn't even a local
+  `fmt` target anyone might run. The tree happened to be clean; the gate is what
+  keeps it that way. (The sibling repos drifted for months under the same
+  configuration — spawn had 3 files unformatted on `main`, truffle 7.)
+
+  The gate reports drift instead of fixing it, with offenders listed and diffed,
+  because `gofmt -w` rewrites files and exits 0 — a check built on it could only
+  ever report success. No behavior change; the server is untouched.
+
 ### Documentation
 - README now documents the `spawn_terminate` two-phase `confirm=true` flow and
   its ambiguous-name refusal (the server's core safety behavior, previously only
