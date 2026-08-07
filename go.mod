@@ -3,7 +3,7 @@ module github.com/spore-host/spore-host-mcp
 go 1.26
 
 require (
-	github.com/mark3labs/mcp-go v0.49.0
+	github.com/mark3labs/mcp-go v0.57.0
 	github.com/spore-host/spawn v0.98.0
 	github.com/spore-host/truffle v0.48.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -91,6 +91,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sigstore/protobuf-specs v0.5.1 // indirect
