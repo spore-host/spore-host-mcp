@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.1] - 2026-08-07
+
 ### Changed
+- Bumped the `spawn` (v0.77.0 → v0.98.0) and `truffle` (v0.44.0 → v0.48.1)
+  dependencies to the current suite releases, pulling in `libs` v0.43.3
+  (indirect) transitively. No behavior change to the server.
 - CI moved off the self-hosted orion runner fleet onto `ubuntu-latest`. The
   fleet (colima/Docker on orion.local) is being decommissioned org-wide; no
   behavior change to the tool.
@@ -178,7 +183,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.1...HEAD
+[0.39.1]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.0...v0.39.1
 [0.39.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.36.1...v0.37.0
