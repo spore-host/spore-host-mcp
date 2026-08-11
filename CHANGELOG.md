@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.2] - 2026-08-11
+
+### Changed
+- Dependency maintenance: bumped `github.com/mark3labs/mcp-go` (0.49.0 →
+  0.57.0) and 5 GitHub Actions to their current releases (no API or behavior
+  change).
+
 ## [0.39.1] - 2026-08-07
 
 ### Changed
@@ -183,7 +190,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.1...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.2...HEAD
+[0.39.2]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.1...v0.39.2
 [0.39.1]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.0...v0.39.1
 [0.39.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.37.0...v0.38.0
