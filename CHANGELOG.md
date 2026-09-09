@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Dependency maintenance: bumped `github.com/mark3labs/mcp-go` (0.57.0 →
+  0.58.0), `github.com/spore-host/spawn` (0.98.0 → 0.102.0) and
+  `github.com/spore-host/truffle` (0.48.1 → 0.53.0). Adapted the `truffle_find`
+  handler to truffle's new `ParsedQuery.BuildCriteria(includeAZs bool)`
+  signature (truffle#141), passing `true` to preserve the prior
+  availability-zone lookup behavior. No behavior change to the server.
+
 ## [0.39.2] - 2026-08-11
 
 ### Changed

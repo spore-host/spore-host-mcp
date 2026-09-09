@@ -104,7 +104,13 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultError(fmt.Sprintf("parse query: %v", err)), nil
 	}
 
-	criteria, err := pq.BuildCriteria()
+	// BuildCriteria gained an includeAZs parameter in truffle v0.53.0
+	// (truffle#141): it toggles the per-type availability-zone lookup that the
+	// search performs. Pass true to preserve the pre-bump behavior — the old
+	// BuildCriteria() hardcoded IncludeAZs: true — so truffle_find keeps
+	// returning AZ detail. (truffle's CLI defaults to this too; --skip-azs is
+	// the opt-out and mcp exposes no such knob.)
+	criteria, err := pq.BuildCriteria(true)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("build criteria: %v", err)), nil
 	}
