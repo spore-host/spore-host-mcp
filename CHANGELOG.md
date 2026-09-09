@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Bumped `google.golang.org/grpc` v1.83.1 → v1.83.2 (indirect), fixing
+  CVE-2026-84445 (HIGH) — a gRPC-Go xDS-server DoS via crash. Trivy flagged
+  v1.83.1, itself a prior grpc CVE fix.
+
 ### Changed
 - Dependency maintenance: bumped `github.com/mark3labs/mcp-go` (0.57.0 →
   0.58.0), `github.com/spore-host/spawn` (0.98.0 → 0.102.0) and
