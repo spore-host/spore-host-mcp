@@ -3,7 +3,7 @@ module github.com/spore-host/spore-host-mcp
 go 1.26
 
 require (
-	github.com/mark3labs/mcp-go v0.58.0
+	github.com/mark3labs/mcp-go v1.0.0
 	github.com/spore-host/spawn v0.102.0
 	github.com/spore-host/truffle v0.53.0
 	gopkg.in/yaml.v3 v3.0.1
