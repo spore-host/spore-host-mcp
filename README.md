@@ -9,7 +9,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/spore-host/spore-host-mcp.svg)](https://pkg.go.dev/github.com/spore-host/spore-host-mcp)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-MCP server exposing truffle and spawn as tools for AI assistants.
+MCP server exposing truffle, spawn, and lagotto as tools for AI assistants.
 
 Works with Claude Desktop, Cursor, and any other client that supports the [Model Context Protocol](https://modelcontextprotocol.io).
 
@@ -59,10 +59,22 @@ For Cursor: `.cursor/mcp.json`
 - `spawn_terminate` — terminate an instance
 - `spawn_extend` — extend TTL
 
-There is **no launch tool, by design** — the server is read + manage-existing
-only. Creating billable instances from an assistant is a boundary spore.host
-doesn't cross automatically; the assistant helps you *construct* the `spawn
-launch` command and you run it.
+**lagotto tools** — capacity watches (require AWS credentials; owner-scoped):
+- `lagotto_list` — list your watches (project, owner, status, pattern, regions,
+  action, wait-to-acquire / time-to-give-up); optional `project` filter
+- `lagotto_status` — full details for one watch id
+- `lagotto_watch` — create a `notify` or `hold` capacity watch (`spawn`-action
+  watches are deferred to the lagotto CLI, which parses a full launch-config)
+
+**spawn launch tools** — these create real, **billable** EC2 instances, so they
+are guardrailed: a **TTL is mandatory** (rejected if absent) and a **`dry_run`**
+flag plans without launching. Each tool's description states it is billable.
+- `spawn_task_run` — launch a task from a TaskSpec (JSON); `dry_run` sizes the
+  cheapest fitting instance and previews the plan. Placement storage (EFS/FSx/
+  attached volumes) is deferred to the CLI.
+- `spawn_app_launch` — resolve, validate, and **plan** an app launch (application
+  / desktop / web) from the catalog. The real DCV/web/session launch is
+  intentionally deferred to the human-gated `spawn app launch` CLI.
 
 `spawn_terminate` is **two-phase**: the first call previews the exact instance
 that would be destroyed, and only a second call with `confirm=true` actually

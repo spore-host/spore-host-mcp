@@ -31,6 +31,8 @@ func main() {
 
 	registerSpawnTools(s)
 	registerTruffleTools(s)
+	registerLagottoTools(s)
+	registerLaunchTools(s)
 
 	errLog := log.New(os.Stderr, "spore-host-mcp: ", 0)
 	if err := server.ServeStdio(s, server.WithErrorLogger(errLog)); err != nil {
