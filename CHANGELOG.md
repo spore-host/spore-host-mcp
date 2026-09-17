@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-09-16
+
 ### Added
 - **lagotto tools** (read + create), so an assistant can inspect and start
   capacity watches:
@@ -259,7 +261,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.3...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.3...v0.40.0
 [0.39.3]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.2...v0.39.3
 [0.39.2]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.1...v0.39.2
 [0.39.1]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.0...v0.39.1
