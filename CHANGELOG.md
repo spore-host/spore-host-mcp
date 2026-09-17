@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Migrated `github.com/mark3labs/mcp-go` from v0.58.0 to **v1.0.0** (the major
+  release adding support for the 2026-07-28 MCP specification, supersedes
+  Dependabot #38). The v1.0.0 API surface used by this server — `MCPServer`,
+  `AddTool`, `NewTool`/`WithString`/`WithBoolean`/`Description`/`Required`/
+  `DefaultString`/`DefaultBool`, `CallToolRequest.GetArguments`,
+  `NewToolResultText`/`NewToolResultError`, `ServeStdio` — is source-compatible
+  with v0.58.0, so no handler code changed. All 8 tools
+  (`spawn_{list,status,stop,terminate,extend}`, `truffle_{find,quota_check,spot_prices}`)
+  continue to work unchanged.
+- Dependency maintenance: bumped `github.com/spore-host/spawn` (0.102.0 →
+  0.110.0) and `github.com/spore-host/truffle` (0.53.0 → 0.56.0) to the current
+  suite releases, pulling in `libs` v0.49.0 and refreshed AWS SDK v2 modules
+  (indirect) transitively. No spawn/truffle API changes affected the server;
+  no behavior change.
+
 ## [0.39.3] - 2026-09-09
 
 ### Security
