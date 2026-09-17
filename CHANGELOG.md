@@ -8,7 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **lagotto tools** (read + create), so an assistant can inspect and start
+  capacity watches:
+  - `lagotto_list` — list the caller's watches, surfacing each watch's project,
+    owner (short ARN), status, instance-type pattern, regions, action, spot, and
+    the derived **wait-to-acquire** / **time-to-give-up** (v0.58.0 #139). Optional
+    `project` filter (reuses the poller's `WatchFilter`); `all` shows every state
+    (default: active only). Read-only, owner-scoped.
+  - `lagotto_status` — full details for one watch id (project/owner, pattern,
+    regions, spot/max-price, status, timings, last match). Owner-scoped: a watch
+    the caller doesn't own returns the same "not found" as a missing one (no
+    existence oracle), mirroring the lagotto CLI.
+  - `lagotto_watch` — create a capacity watch. Implements the `notify` and `hold`
+    actions (pattern, regions, project, ttl, spot, max_price, notify channels);
+    auto-creates the backing DynamoDB tables on first use like the CLI. `action=
+    spawn` is deferred (it needs a full spawn launch-config) and rejected with a
+    pointer to the CLI; SageMaker/fleet/AZ knobs are also out of scope for the tool.
+- **spawn launch tools** — these create real, **BILLABLE** EC2 instances, so both
+  carry cost guardrails: a **TTL is mandatory** (the call is rejected if the
+  spec/params carry none) and a **`dry_run`** flag resolves/plans without launching.
+  The billable nature is stated in each tool's description.
+  - `spawn_task_run` — launch a task from a TaskSpec (JSON). Parsing enforces
+    `lifecycle.ttl`; `dry_run=true` sizes the cheapest fitting instance and prints
+    the plan (no launch). A real launch reproduces `spawn task run` via the exported
+    library surface (results bucket, on-instance wrapper, scoped S3 instance
+    profile, `launcher.Provision`). Placement storage (attached volumes / EFS / FSx)
+    is deferred to the CLI.
+  - `spawn_app_launch` — resolve and plan an app launch (kind application /
+    desktop / web) from the catalog: validates the app, kind/web-port, instance
+    type, base AMI, and the mandatory TTL, and previews the plan. The real
+    DCV/web/session launch is intentionally deferred to the human-gated `spawn app
+    launch` CLI (its orchestration lives in spawn's unexported command layer);
+    `dry_run` and non-dry-run both return a plan.
+
 ### Changed
+- Bumped `github.com/spore-host/spawn` (0.110.0 → **0.111.0**) and added
+  `github.com/spore-host/lagotto` **0.58.0** as a new dependency for the lagotto
+  tools (pulling in `libs/catalog` for `spawn_app_launch` and refreshed AWS SDK v2
+  service modules transitively).
 - Migrated `github.com/mark3labs/mcp-go` from v0.58.0 to **v1.0.0** (the major
   release adding support for the 2026-07-28 MCP specification, supersedes
   Dependabot #38). The v1.0.0 API surface used by this server — `MCPServer`,
