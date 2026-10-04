@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Task launches now stamp a run identity and detect a GPU from the sized instance
+  type.** Both were missing because this repo was pinned to `spawn` v0.111.0 and could
+  not move: `taskproto.GenerateWrapper` gained `gpu bool` in spawn **v0.111.1** — a
+  breaking signature change in a PATCH release, filed as spawn#679 — and `runID string`
+  in v0.112.0. A Dependabot bump had therefore been failing CI for six days, with
+  nothing pointing at the cause.
+  The consequences of the two missing arguments are not cosmetic. An empty `run_id`
+  reads downstream as **unattributable**: re-running a `task_id` overwrites the same
+  `tasks/<task_id>/completion.json` key, so a record left by a previous attempt becomes
+  indistinguishable from this one's, and a waiter reports an already-fixed task as still
+  failing (spawn#608). And `gpu=false` on a GPU instance silently drops `--gpus all`
+  from the container run, so a workload sees no GPU on hardware that has one
+  (spawn#601/#606).
+  Both values are positional arguments that compile fine when wrong, so they are now
+  produced by a named `wrapperIdentity` helper with a test for each: that the run id is
+  non-empty **and differs between attempts**, and that GPU-ness follows the sized
+  instance type rather than the spec (a task may ask only via `families` and still be
+  sized onto a GPU box).
+
+### Changed
+
+- **Dependencies caught up to current**: `spawn` 0.111.0 → 0.117.0, `mcp-go` 1.0.0 →
+  1.1.1, `libs` 0.49.0 → 0.50.0, plus the transitive AWS SDK and protobuf updates.
+
 ### Added
 
 - **The changelog policy is now enforced in CI rather than by habit.** A PR that changes

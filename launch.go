@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spore-host/libs/catalog"
@@ -216,7 +217,24 @@ func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskprot
 		return mcp.NewToolResultError(fmt.Sprintf("ensure results bucket %s: %v", resultsBucket, err)), nil
 	}
 
-	wrapper := taskproto.GenerateWrapper(spec, resultsBucket, region)
+	// GPU-ness is decided from the SIZED instance type, not from the spec alone
+	// (spawn#601/#606): a task that asked only via `families` can still be sized
+	// onto a GPU box, and the wrapper needs `docker run --gpus all` plus the
+	// NVIDIA Container Toolkit for the driver to attach. Mirrors spawn's own
+	// derivation in cmd/task.go so the two cannot drift.
+	gpu, runID := wrapperIdentity(spec, sized.InstanceType)
+
+	// A fresh run identity per attempt (spawn#608). Re-running a task_id
+	// overwrites the same tasks/<task_id>/completion.json key, so without an
+	// attempt id a record left by a PREVIOUS attempt is indistinguishable from
+	// this one's — and a waiter returns it as the answer while the new instance is
+	// still running, reporting a fixed task as still failing.
+	//
+	// Passing "" here would compile and emit an empty run_id, which reads
+	// downstream as "unattributable" — i.e. it would silently reintroduce that
+	// false negative in the MCP path only. It has to be minted.
+
+	wrapper := taskproto.GenerateWrapper(spec, resultsBucket, region, gpu, runID)
 
 	profile, err := client.CreateOrGetInstanceProfile(ctx, spawnclient.IAMRoleConfig{
 		TrustServices:    []string{"ec2"},
@@ -503,4 +521,22 @@ func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	}
 	sb.WriteString(fmt.Sprintf("TTL:       %s\n", ttl))
 	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
+}
+
+// wrapperIdentity returns the two per-launch values taskproto.GenerateWrapper
+// needs beyond the spec: whether the sized instance is GPU-capable, and a fresh
+// run identity for this attempt.
+//
+// It exists as a named function because both are positional arguments that
+// compile fine when wrong. `gpu=false` on a GPU box silently drops `--gpus all`,
+// and `runID=""` silently reintroduces the spawn#608 false negative — a waiter
+// mistaking a previous attempt's completion record for this one's. Neither
+// failure is visible at the call site, so each gets a test instead.
+//
+// GPU-ness is derived from the SIZED instance type, not the spec alone
+// (spawn#601/#606): a task that asked only via `families` can still be sized
+// onto a GPU box. This mirrors spawn's own derivation in cmd/task.go.
+func wrapperIdentity(spec *taskproto.TaskSpec, instanceType string) (gpu bool, runID string) {
+	return spec.Resources.GPUs > 0 || spawnclient.DetectGPUInstance(instanceType),
+		uuid.NewString()
 }
