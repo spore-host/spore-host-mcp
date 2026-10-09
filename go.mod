@@ -1,6 +1,6 @@
 module github.com/spore-host/spore-host-mcp
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
@@ -28,15 +28,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/account v1.32.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.81.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.57.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.73.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.68.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.41.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ebs v1.34.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.332.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/efs v1.41.16 // indirect
-	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.55.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/fsx v1.65.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/iam v1.64.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.55.6 // indirect
@@ -49,10 +45,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/pricing v1.46.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.33.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.277.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.39.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.0 // indirect
@@ -84,7 +78,6 @@ require (
 	github.com/go-openapi/swag/cmdutils v0.28.0 // indirect
 	github.com/go-openapi/swag/conv v0.28.0 // indirect
 	github.com/go-openapi/swag/fileutils v0.28.0 // indirect
-	github.com/go-openapi/swag/jsonname v0.26.1 // indirect
 	github.com/go-openapi/swag/jsonutils v0.28.0 // indirect
 	github.com/go-openapi/swag/loading v0.28.0 // indirect
 	github.com/go-openapi/swag/mangling v0.28.0 // indirect
@@ -102,14 +95,10 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/in-toto/attestation v1.2.0 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
-	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/nicksnyder/go-i18n/v2 v2.4.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
-	github.com/scttfrdmn/strata v0.22.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sigstore/protobuf-specs v0.5.1 // indirect
@@ -120,9 +109,6 @@ require (
 	github.com/sigstore/timestamp-authority/v2 v2.1.2 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/cobra v1.10.2 // indirect
-	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spore-host/cohort v0.2.0 // indirect
 	github.com/theupdateframework/go-tuf/v2 v2.4.2 // indirect
 	github.com/transparency-dev/formats v0.1.1 // indirect
 	github.com/transparency-dev/merkle v0.0.2 // indirect
@@ -136,13 +122,13 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
-	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2 // indirect

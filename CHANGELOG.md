@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Rebuilt against Go 1.26.9 and `golang.org/x/net` v0.60.0** for the Go
+  vulnerabilities disclosed 2026-10-09: GO-2026-6605, 6607, 6608, 6610, 6611,
+  6612, 6613 and 6617, across `net/http`, `crypto/tls`, `mime/multipart`,
+  `net/http/httputil`, `net/textproto` and x/net's HTTP/2 implementation. This
+  server reaches several of them through `server.ServeStdio`, so they were
+  reported as called rather than merely present. The CI Go pin moves
+  1.26.8 → 1.26.9 in all three workflows.
+
 ### Fixed
 
 - **Task launches now stamp a run identity and detect a GPU from the sized instance
