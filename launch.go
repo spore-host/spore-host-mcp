@@ -222,7 +222,6 @@ func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskprot
 	// onto a GPU box, and the wrapper needs `docker run --gpus all` plus the
 	// NVIDIA Container Toolkit for the driver to attach. Mirrors spawn's own
 	// derivation in cmd/task.go so the two cannot drift.
-	gpu, runID := wrapperIdentity(spec, sized.InstanceType)
 
 	// A fresh run identity per attempt (spawn#608). Re-running a task_id
 	// overwrites the same tasks/<task_id>/completion.json key, so without an
@@ -240,12 +239,8 @@ func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskprot
 	// script with an empty run_id, so the failure this comment describes can no
 	// longer be introduced by a padding edit — which is how it was introduced
 	// here the first time.
-	wrapper, err := taskproto.GenerateWrapper(spec, taskproto.WrapperOptions{
-		ResultsPrefix: resultsBucket,
-		Region:        region,
-		RunID:         runID,
-		GPU:           gpu,
-	})
+	wrapper, err := taskproto.GenerateWrapper(spec,
+		wrapperOptionsFor(spec, sized.InstanceType, resultsBucket, region))
 	if err != nil {
 		return mcp.NewToolResultError("build task wrapper: " + err.Error()), nil
 	}
@@ -553,4 +548,23 @@ func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 func wrapperIdentity(spec *taskproto.TaskSpec, instanceType string) (gpu bool, runID string) {
 	return spec.Resources.GPUs > 0 || spawnclient.DetectGPUInstance(instanceType),
 		uuid.NewString()
+}
+
+// wrapperOptionsFor assembles everything taskproto's generators need for one
+// launch, so the assembly sits in a function a test can call rather than inline
+// in a handler that needs AWS to reach.
+//
+// Same reasoning that gave wrapperIdentity its own name (spawn#608/#606), one
+// layer out: spawn#764 replaced four positional arguments with a struct, and a
+// struct's omitted field is silence where a new positional argument is at least
+// a compile error. Keeping the construction here means the test can assert the
+// exact value the handler passes, instead of a lookalike built in the test.
+func wrapperOptionsFor(spec *taskproto.TaskSpec, instanceType, resultsBucket, region string) taskproto.WrapperOptions {
+	gpu, runID := wrapperIdentity(spec, instanceType)
+	return taskproto.WrapperOptions{
+		ResultsPrefix: resultsBucket,
+		Region:        region,
+		RunID:         runID,
+		GPU:           gpu,
+	}
 }

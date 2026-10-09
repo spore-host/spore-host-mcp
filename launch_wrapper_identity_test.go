@@ -97,21 +97,20 @@ func TestWrapperOptionsFromWrapperIdentityAreValid(t *testing.T) {
 		name         string
 		instanceType string
 		bucket       string
+		wantGPU      bool
 	}{
-		{"CPU instance", "m7i.large", "spawn-results-123456789012-us-east-1"},
-		{"GPU instance", "g6.xlarge", "spawn-results-123456789012-us-east-1"},
+		{"CPU instance", "m7i.large", "spawn-results-123456789012-us-east-1", false},
+		{"GPU instance", "g6.xlarge", "spawn-results-123456789012-us-east-1", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := &taskproto.TaskSpec{TaskID: "t1", Command: []string{"true"}}
-			gpu, runID := wrapperIdentity(spec, tc.instanceType)
 
-			// Constructed exactly as launch.go does, so this test fails if that
-			// call site drifts away from what Validate requires.
-			opts := taskproto.WrapperOptions{
-				ResultsPrefix: tc.bucket,
-				Region:        "us-east-1",
-				RunID:         runID,
-				GPU:           gpu,
+			// The function the handler actually calls, not a lookalike rebuilt
+			// here — so this cannot pass while the real call site is wrong.
+			opts := wrapperOptionsFor(spec, tc.instanceType, tc.bucket, "us-east-1")
+
+			if opts.GPU != tc.wantGPU {
+				t.Errorf("GPU = %v, want %v on %q", opts.GPU, tc.wantGPU, tc.instanceType)
 			}
 			if err := opts.Validate(); err != nil {
 				t.Fatalf("the options launch.go builds are invalid: %v", err)
