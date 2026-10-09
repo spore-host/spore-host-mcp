@@ -4,13 +4,13 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
-	github.com/aws/aws-sdk-go-v2/service/sts v1.50.0
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v1.1.1
 	github.com/spore-host/lagotto v0.63.1
 	github.com/spore-host/libs v0.50.0
-	github.com/spore-host/spawn v0.117.0
-	github.com/spore-host/truffle v0.56.0
+	github.com/spore-host/spawn v0.126.1
+	github.com/spore-host/truffle v0.58.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -19,8 +19,8 @@ require (
 	github.com/Microsoft/hcsshim v0.14.1 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.33.4 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.4 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.33.5 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.5 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.21.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.22.18 // indirect
@@ -32,7 +32,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.68.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.41.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ebs v1.34.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.332.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.335.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/efs v1.41.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/fsx v1.65.10 // indirect
 	github.com/aws/aws-sdk-go-v2/service/iam v1.64.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/imagebuilder v1.55.6 // indirect
@@ -43,11 +44,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.52.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.46.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.49.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.33.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.277.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.39.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.43.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27 // indirect
@@ -55,7 +56,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/xray v1.36.23 // indirect
-	github.com/aws/smithy-go v1.28.1 // indirect
+	github.com/aws/smithy-go v1.28.2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
