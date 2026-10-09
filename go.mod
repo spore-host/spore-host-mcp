@@ -4,13 +4,13 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.1
-	github.com/aws/aws-sdk-go-v2/service/sts v1.50.0
+	github.com/aws/aws-sdk-go-v2/service/sts v1.51.1
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v1.1.1
 	github.com/spore-host/lagotto v0.63.1
 	github.com/spore-host/libs v0.50.0
 	github.com/spore-host/spawn v0.117.0
-	github.com/spore-host/truffle v0.56.0
+	github.com/spore-host/truffle v0.57.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -39,15 +39,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.19 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.11.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.13.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.20.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.52.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.108.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.46.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.48.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.33.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.277.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.39.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.42.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27 // indirect
