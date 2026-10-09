@@ -234,7 +234,21 @@ func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskprot
 	// downstream as "unattributable" — i.e. it would silently reintroduce that
 	// false negative in the MCP path only. It has to be minted.
 
-	wrapper := taskproto.GenerateWrapper(spec, resultsBucket, region, gpu, runID)
+	// The options are a struct rather than five positional arguments precisely
+	// because of the comment above (spawn#764, split from spawn#679). An omitted
+	// RunID or ResultsPrefix is now an error from GenerateWrapper instead of a
+	// script with an empty run_id, so the failure this comment describes can no
+	// longer be introduced by a padding edit — which is how it was introduced
+	// here the first time.
+	wrapper, err := taskproto.GenerateWrapper(spec, taskproto.WrapperOptions{
+		ResultsPrefix: resultsBucket,
+		Region:        region,
+		RunID:         runID,
+		GPU:           gpu,
+	})
+	if err != nil {
+		return mcp.NewToolResultError("build task wrapper: " + err.Error()), nil
+	}
 
 	profile, err := client.CreateOrGetInstanceProfile(ctx, spawnclient.IAMRoleConfig{
 		TrustServices:    []string{"ec2"},

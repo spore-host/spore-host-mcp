@@ -41,8 +41,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Dependencies caught up to current**: `spawn` 0.111.0 → 0.117.0, `mcp-go` 1.0.0 →
-  1.1.1, `libs` 0.49.0 → 0.50.0, plus the transitive AWS SDK and protobuf updates.
+- **Dependencies caught up to current**: `spawn` 0.111.0 → 0.126.1, `mcp-go` 1.0.0 →
+  1.1.1, `libs` 0.49.0 → 0.50.0, `truffle` 0.56.0 → 0.58.0, plus the transitive AWS
+  SDK and protobuf updates.
+
+- **Migrated to `taskproto.WrapperOptions`** (spawn#764, this repo's #48).
+  `taskproto.GenerateWrapper` now takes an options struct and returns an error
+  instead of five positional arguments, so the call in `launch.go` was updated and
+  the error is surfaced as a tool error. No behaviour change: the run id and GPU
+  flag `wrapperIdentity` already computed are passed through as named fields.
+  This closes the loop on spawn#679, which was filed *because of this repo* — a
+  positional signature change had made `GenerateWrapper(spec, bucket, region,
+  false, "")` the quickest way to recompile, which emitted an empty `run_id` and
+  dropped `--gpus all` while passing every test. The new signature makes that
+  exact edit impossible: an omitted `RunID` is now an error, not a silent default.
 
 ### Added
 
