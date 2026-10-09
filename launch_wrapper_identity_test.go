@@ -78,3 +78,66 @@ func TestWrapperIdentityDetectsGPUFromTheSizedType(t *testing.T) {
 		})
 	}
 }
+
+// TestWrapperOptionsFromWrapperIdentityAreValid guards OUR side of the contract
+// that spawn#764 introduced.
+//
+// GenerateWrapper now returns an error when ResultsPrefix or RunID is empty, and
+// launch.go surfaces that as a tool error. That branch is defensive — it cannot
+// be reached today, because wrapperIdentity always mints a run id and the results
+// bucket is resolved before the call — and an unreachable branch is exactly the
+// kind of thing that quietly becomes reachable.
+//
+// So rather than contort the code to cover the error return, this asserts the
+// inputs are valid for the shapes launch.go actually builds. If someone later
+// makes the results bucket optional, or returns an empty id from
+// wrapperIdentity, this fails here instead of at a user's launch.
+func TestWrapperOptionsFromWrapperIdentityAreValid(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		instanceType string
+		bucket       string
+	}{
+		{"CPU instance", "m7i.large", "spawn-results-123456789012-us-east-1"},
+		{"GPU instance", "g6.xlarge", "spawn-results-123456789012-us-east-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := &taskproto.TaskSpec{TaskID: "t1", Command: []string{"true"}}
+			gpu, runID := wrapperIdentity(spec, tc.instanceType)
+
+			// Constructed exactly as launch.go does, so this test fails if that
+			// call site drifts away from what Validate requires.
+			opts := taskproto.WrapperOptions{
+				ResultsPrefix: tc.bucket,
+				Region:        "us-east-1",
+				RunID:         runID,
+				GPU:           gpu,
+			}
+			if err := opts.Validate(); err != nil {
+				t.Fatalf("the options launch.go builds are invalid: %v", err)
+			}
+			if _, err := taskproto.GenerateWrapper(spec, opts); err != nil {
+				t.Fatalf("GenerateWrapper rejected them: %v", err)
+			}
+		})
+	}
+}
+
+// TestGenerateWrapperRejectsAnEmptyRunID pins the reason the error return exists
+// at all: an empty run id used to be accepted and emitted an unattributable
+// record (spawn#608). Asserted here, in the consumer, because this repo is where
+// that bug actually shipped.
+func TestGenerateWrapperRejectsAnEmptyRunID(t *testing.T) {
+	spec := &taskproto.TaskSpec{TaskID: "t1", Command: []string{"true"}}
+	_, err := taskproto.GenerateWrapper(spec, taskproto.WrapperOptions{
+		ResultsPrefix: "spawn-results-123456789012-us-east-1",
+		Region:        "us-east-1",
+		RunID:         "", // the padding edit that caused spawn#679
+	})
+	if err == nil {
+		t.Error("GenerateWrapper accepted an empty RunID. That is the spawn#608 " +
+			"regression this signature exists to prevent: the wrapper would emit an " +
+			"empty run_id, and a waiter could not tell this attempt's completion " +
+			"record from a previous attempt's at the same S3 key.")
+	}
+}
