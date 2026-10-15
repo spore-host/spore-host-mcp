@@ -169,29 +169,29 @@ func renderTaskPlan(ctx context.Context, spec *taskproto.TaskSpec, finder taskpr
 
 	var sb strings.Builder
 	sb.WriteString("DRY RUN — nothing will be launched.\n\n")
-	sb.WriteString(fmt.Sprintf("Task:      %s\n", spec.TaskID))
-	sb.WriteString(fmt.Sprintf("Command:   %s\n", strings.Join(spec.Command, " ")))
+	fmt.Fprintf(&sb, "Task:      %s\n", spec.TaskID)
+	fmt.Fprintf(&sb, "Command:   %s\n", strings.Join(spec.Command, " "))
 	if spec.Container != "" {
-		sb.WriteString(fmt.Sprintf("Container: %s\n", spec.Container))
+		fmt.Fprintf(&sb, "Container: %s\n", spec.Container)
 	}
-	sb.WriteString(fmt.Sprintf("Region:    %s\n", region))
-	sb.WriteString(fmt.Sprintf("Instance:  %s  (%d vCPU, %.0f GiB", sized.InstanceType, sized.VCPUs, sized.MemoryGiB))
+	fmt.Fprintf(&sb, "Region:    %s\n", region)
+	fmt.Fprintf(&sb, "Instance:  %s  (%d vCPU, %.0f GiB", sized.InstanceType, sized.VCPUs, sized.MemoryGiB)
 	if sized.OnDemandPrice > 0 {
-		sb.WriteString(fmt.Sprintf(", $%.4f/hr on-demand", sized.OnDemandPrice))
+		fmt.Fprintf(&sb, ", $%.4f/hr on-demand", sized.OnDemandPrice)
 	}
-	sb.WriteString(fmt.Sprintf(")\n           chosen as cheapest of %d matching type(s)\n", sized.Considered))
-	sb.WriteString(fmt.Sprintf("AMI:       %s\n", taskAMIPlan(spec, sized.InstanceType)))
+	fmt.Fprintf(&sb, ")\n           chosen as cheapest of %d matching type(s)\n", sized.Considered)
+	fmt.Fprintf(&sb, "AMI:       %s\n", taskAMIPlan(spec, sized.InstanceType))
 	purchase := spec.Resources.Purchase
 	if purchase == "" {
 		purchase = taskproto.PurchaseOnDemand
 	}
-	sb.WriteString(fmt.Sprintf("Purchase:  %s\n", purchase))
-	sb.WriteString(fmt.Sprintf("TTL:       %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete()))
+	fmt.Fprintf(&sb, "Purchase:  %s\n", purchase)
+	fmt.Fprintf(&sb, "TTL:       %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete())
 	if spec.Lifecycle.CostLimit > 0 {
-		sb.WriteString(fmt.Sprintf("Cost limit: $%.2f\n", spec.Lifecycle.CostLimit))
+		fmt.Fprintf(&sb, "Cost limit: $%.2f\n", spec.Lifecycle.CostLimit)
 	}
 	if d, err := time.ParseDuration(spec.Lifecycle.TTL); err == nil && sized.OnDemandPrice > 0 {
-		sb.WriteString(fmt.Sprintf("Max cost:  ~$%.2f (on-demand rate × TTL; a completed task usually costs far less)\n", sized.OnDemandPrice*d.Hours()))
+		fmt.Fprintf(&sb, "Max cost:  ~$%.2f (on-demand rate × TTL; a completed task usually costs far less)\n", sized.OnDemandPrice*d.Hours())
 	}
 	sb.WriteString("\nRe-run with dry_run=false to launch this task.")
 	return mcp.NewToolResultText(sb.String()), nil
@@ -264,11 +264,11 @@ func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskprot
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("✅ Task launched: %s\n", spec.TaskID))
-	sb.WriteString(fmt.Sprintf("Instance:   %s  (%s) in %s / %s\n", result.InstanceID, sized.InstanceType, result.Region, orDash(result.AvailabilityZone)))
-	sb.WriteString(fmt.Sprintf("TTL:        %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete()))
-	sb.WriteString(fmt.Sprintf("Completion: s3://%s/tasks/%s/completion.json\n", resultsBucket, spec.TaskID))
-	sb.WriteString(fmt.Sprintf("\nPoll for completion:\n  spawn task status %s --region %s\n", spec.TaskID, region))
+	fmt.Fprintf(&sb, "✅ Task launched: %s\n", spec.TaskID)
+	fmt.Fprintf(&sb, "Instance:   %s  (%s) in %s / %s\n", result.InstanceID, sized.InstanceType, result.Region, orDash(result.AvailabilityZone))
+	fmt.Fprintf(&sb, "TTL:        %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete())
+	fmt.Fprintf(&sb, "Completion: s3://%s/tasks/%s/completion.json\n", resultsBucket, spec.TaskID)
+	fmt.Fprintf(&sb, "\nPoll for completion:\n  spawn task status %s --region %s\n", spec.TaskID, region)
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
@@ -498,7 +498,7 @@ func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	if !dryRun {
 		sb.WriteString("PLAN ONLY — this MCP tool does not perform the real DCV/web launch.\n")
 		sb.WriteString("Run it (human-gated) via the CLI:\n")
-		sb.WriteString(fmt.Sprintf("  spawn app launch %s --ttl %s --instance-type %s", entry.Name, ttl, instanceType))
+		fmt.Fprintf(&sb, "  spawn app launch %s --ttl %s --instance-type %s", entry.Name, ttl, instanceType)
 		if region != "" {
 			sb.WriteString(" --region " + region)
 		}
@@ -506,29 +506,29 @@ func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 			sb.WriteString(" --app-version " + appVersion)
 		}
 		if webPort > 0 {
-			sb.WriteString(fmt.Sprintf(" --web-port %d", webPort))
+			fmt.Fprintf(&sb, " --web-port %d", webPort)
 		}
 		sb.WriteString("\n\n")
 	} else {
 		sb.WriteString("DRY RUN — nothing will be launched.\n\n")
 	}
-	sb.WriteString(fmt.Sprintf("App:       %s — %s\n", entry.Name, entry.Description))
-	sb.WriteString(fmt.Sprintf("Kind:      %s\n", kind))
-	sb.WriteString(fmt.Sprintf("Region:    %s\n", region))
-	sb.WriteString(fmt.Sprintf("Instance:  %s\n", instanceType))
+	fmt.Fprintf(&sb, "App:       %s — %s\n", entry.Name, entry.Description)
+	fmt.Fprintf(&sb, "Kind:      %s\n", kind)
+	fmt.Fprintf(&sb, "Region:    %s\n", region)
+	fmt.Fprintf(&sb, "Instance:  %s\n", instanceType)
 	if entry.Containerized() {
-		sb.WriteString(fmt.Sprintf("Image:     %s:%s\n", entry.Image, imageTag))
+		fmt.Fprintf(&sb, "Image:     %s:%s\n", entry.Image, imageTag)
 	}
 	if kind == catalog.KindWeb {
-		sb.WriteString(fmt.Sprintf("Web port:  %d (TLS-proxied on :443, token-gated)\n", entry.Port))
+		fmt.Fprintf(&sb, "Web port:  %d (TLS-proxied on :443, token-gated)\n", entry.Port)
 	}
-	sb.WriteString(fmt.Sprintf("GPU:       %v\n", entry.GPU))
+	fmt.Fprintf(&sb, "GPU:       %v\n", entry.GPU)
 	if spawnclient.DetectGPUInstance(instanceType) {
 		sb.WriteString("AMI:       AL2023 GPU DLAMI (NVIDIA driver; auto-selected for GPU instance)\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("AMI:       AL2023 base — %s (resolved via SSM; DCV installed at boot)\n", spawnclient.DetectArchitecture(instanceType)))
+		fmt.Fprintf(&sb, "AMI:       AL2023 base — %s (resolved via SSM; DCV installed at boot)\n", spawnclient.DetectArchitecture(instanceType))
 	}
-	sb.WriteString(fmt.Sprintf("TTL:       %s\n", ttl))
+	fmt.Fprintf(&sb, "TTL:       %s\n", ttl)
 	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
 }
 

@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CI now runs golangci-lint, and the 107 findings it reported are fixed**
+  (#54). All were staticcheck QF1012 (`sb.WriteString(fmt.Sprintf(...))`),
+  now `fmt.Fprintf(&sb, ...)` across `lagotto.go`, `launch.go`, `spawn.go` and
+  `truffle.go`; tool output is byte-for-byte unchanged. A new `Lint` CI job
+  installs golangci-lint 2.14.0, verified against a pinned SHA256, and runs
+  `make lint` from a new `Makefile` (which also provides `build`, `test`, `vet`
+  and the `changelog-fix` target `CLAUDE.md` already referred to).
+  `TestCIGatesLint` fails if the gate, the version pin or the checksum check is
+  removed, or if CI's version drifts from the Makefile's `GOLANGCI_LINT_VERSION`.
+
 - **CI action pins now say which version they actually run** (#52).
   `actions/checkout@3d3c42e…` was commented `# v6` in every workflow but is
   v7.0.1; likewise `goreleaser-action` `# v7` is v7.2.3 and the `trivy-action`

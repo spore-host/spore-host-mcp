@@ -184,20 +184,20 @@ func handleSpawnList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d %s instance(s):\n\n", len(instances), state))
+	fmt.Fprintf(&sb, "Found %d %s instance(s):\n\n", len(instances), state)
 	for _, inst := range instances {
 		age := "unknown"
 		if !inst.LaunchTime.IsZero() {
 			age = formatDuration(time.Since(inst.LaunchTime))
 		}
-		sb.WriteString(fmt.Sprintf("• %s (%s)\n", inst.Name, inst.InstanceID))
-		sb.WriteString(fmt.Sprintf("  Type: %s  State: %s  Region: %s\n", inst.InstanceType, inst.State, inst.Region))
+		fmt.Fprintf(&sb, "• %s (%s)\n", inst.Name, inst.InstanceID)
+		fmt.Fprintf(&sb, "  Type: %s  State: %s  Region: %s\n", inst.InstanceType, inst.State, inst.Region)
 		if inst.PublicIP != "" {
-			sb.WriteString(fmt.Sprintf("  IP: %s\n", inst.PublicIP))
+			fmt.Fprintf(&sb, "  IP: %s\n", inst.PublicIP)
 		}
-		sb.WriteString(fmt.Sprintf("  Age: %s", age))
+		fmt.Fprintf(&sb, "  Age: %s", age)
 		if inst.TTL != "" {
-			sb.WriteString(fmt.Sprintf("  TTL: %s", inst.TTL))
+			fmt.Fprintf(&sb, "  TTL: %s", inst.TTL)
 		}
 		sb.WriteString("\n\n")
 	}
@@ -225,23 +225,23 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Instance: %s (%s)\n", inst.Name, inst.InstanceID))
-	sb.WriteString(fmt.Sprintf("State:    %s\n", inst.State))
-	sb.WriteString(fmt.Sprintf("Type:     %s\n", inst.InstanceType))
-	sb.WriteString(fmt.Sprintf("Region:   %s", inst.Region))
+	fmt.Fprintf(&sb, "Instance: %s (%s)\n", inst.Name, inst.InstanceID)
+	fmt.Fprintf(&sb, "State:    %s\n", inst.State)
+	fmt.Fprintf(&sb, "Type:     %s\n", inst.InstanceType)
+	fmt.Fprintf(&sb, "Region:   %s", inst.Region)
 	if inst.AvailabilityZone != "" {
-		sb.WriteString(fmt.Sprintf(" (%s)", inst.AvailabilityZone))
+		fmt.Fprintf(&sb, " (%s)", inst.AvailabilityZone)
 	}
 	sb.WriteString("\n")
 	if inst.PublicIP != "" {
-		sb.WriteString(fmt.Sprintf("Public IP: %s\n", inst.PublicIP))
+		fmt.Fprintf(&sb, "Public IP: %s\n", inst.PublicIP)
 	}
 	if inst.PrivateIP != "" {
-		sb.WriteString(fmt.Sprintf("Private IP: %s\n", inst.PrivateIP))
+		fmt.Fprintf(&sb, "Private IP: %s\n", inst.PrivateIP)
 	}
-	sb.WriteString(fmt.Sprintf("Age:      %s\n", age))
+	fmt.Fprintf(&sb, "Age:      %s\n", age)
 	if inst.TTL != "" {
-		sb.WriteString(fmt.Sprintf("TTL:      %s\n", inst.TTL))
+		fmt.Fprintf(&sb, "TTL:      %s\n", inst.TTL)
 	}
 	// spored reaps on the absolute spawn:ttl-deadline, not the relative TTL — so
 	// surface the actual death time (and how far off it is) rather than leaving the
@@ -251,16 +251,16 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 			remaining := time.Until(deadline)
 			when := deadline.UTC().Format("2006-01-02 15:04 UTC")
 			if remaining > 0 {
-				sb.WriteString(fmt.Sprintf("Deadline: %s (in %s)\n", when, formatDuration(remaining)))
+				fmt.Fprintf(&sb, "Deadline: %s (in %s)\n", when, formatDuration(remaining))
 			} else {
-				sb.WriteString(fmt.Sprintf("Deadline: %s (expired)\n", when))
+				fmt.Fprintf(&sb, "Deadline: %s (expired)\n", when)
 			}
 		} else {
-			sb.WriteString(fmt.Sprintf("Deadline: %s\n", dl))
+			fmt.Fprintf(&sb, "Deadline: %s\n", dl)
 		}
 	}
 	if inst.IdleTimeout != "" {
-		sb.WriteString(fmt.Sprintf("Idle timeout: %s\n", inst.IdleTimeout))
+		fmt.Fprintf(&sb, "Idle timeout: %s\n", inst.IdleTimeout)
 	}
 	if inst.SpotInstance {
 		sb.WriteString("Spot:     yes\n")
@@ -268,7 +268,7 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 
 	// DNS name from tags
 	if dns, ok := inst.Tags["spawn:dns-name"]; ok && dns != "" {
-		sb.WriteString(fmt.Sprintf("DNS:      %s\n", dns))
+		fmt.Fprintf(&sb, "DNS:      %s\n", dns)
 	}
 
 	return mcp.NewToolResultText(sb.String()), nil
