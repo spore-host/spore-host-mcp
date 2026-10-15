@@ -11,6 +11,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ import (
 // The second half is the subtle one. `gofmt -w` rewrites files and exits 0, so a
 // "gate" built on it can only ever report success — green on a dirty tree
 // forever, indistinguishable from having no gate at all. Only `gofmt -l`/`-d`
-// can fail. This repo has no Makefile, so the gate is inline in the workflow.
+// can fail. The gate is inline in the workflow (it predates the Makefile).
 func TestCIGatesFormatting(t *testing.T) {
 	data, err := os.ReadFile(".github/workflows/ci.yml")
 	if err != nil {
@@ -46,6 +47,52 @@ func TestCIGatesFormatting(t *testing.T) {
 	}
 	if !strings.Contains(step, "exit 1") {
 		t.Error("the Format gate never exits non-zero, so CI can't fail on drift")
+	}
+}
+
+// TestCIGatesLint checks that CI runs golangci-lint, pinned to an exact version
+// and verified against a pinned SHA256, and that the pin matches the Makefile's.
+//
+// Without the gate, findings accumulate on main unnoticed: 107 staticcheck
+// findings had built up by the time it landed (#54). The version cross-check is
+// what keeps `make lint` locally meaning the same thing as the CI gate.
+func TestCIGatesLint(t *testing.T) {
+	data, err := os.ReadFile(".github/workflows/ci.yml")
+	if err != nil {
+		t.Fatalf("read ci.yml: %v", err)
+	}
+	step, ok := workflowStep(string(data), "Lint gate")
+	if !ok {
+		t.Fatal("the CI workflow has no 'Lint gate' step; without it lint findings " +
+			"accumulate on main unnoticed (#54)")
+	}
+	if !strings.Contains(step, "make lint") {
+		t.Error("the Lint gate does not run 'make lint'")
+	}
+	install, ok := workflowStep(string(data), "Install golangci-lint")
+	if !ok {
+		t.Fatal("the CI workflow has no 'Install golangci-lint' step")
+	}
+	ver := regexp.MustCompile(`VER=(\d+\.\d+\.\d+)`).FindStringSubmatch(install)
+	if ver == nil {
+		t.Error("golangci-lint is not pinned to an exact version (VER=X.Y.Z)")
+	}
+	if !regexp.MustCompile(`SHA256=[0-9a-f]{64}`).MatchString(install) ||
+		!strings.Contains(install, "sha256sum -c") {
+		t.Error("the golangci-lint download is not verified against a pinned SHA256")
+	}
+
+	mk, err := os.ReadFile("Makefile")
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+	mkVer := regexp.MustCompile(`(?m)^GOLANGCI_LINT_VERSION\s*\??=\s*(\S+)`).FindSubmatch(mk)
+	if mkVer == nil {
+		t.Fatal("the Makefile does not pin GOLANGCI_LINT_VERSION")
+	}
+	if ver != nil && string(mkVer[1]) != ver[1] {
+		t.Errorf("CI installs golangci-lint %s but the Makefile pins %s; "+
+			"keep them in step so local `make lint` matches the gate", ver[1], mkVer[1])
 	}
 }
 

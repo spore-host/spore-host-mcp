@@ -160,34 +160,34 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 func renderFindResults(query string, results []truffleaws.InstanceTypeResult, total int, spotByType map[string]truffleaws.SpotPriceResult, pq *find.ParsedQuery) string {
 	var sb strings.Builder
 	if total > len(results) {
-		sb.WriteString(fmt.Sprintf("Found %d instance type(s) matching %q (showing the top %d — narrow the query for the rest):\n\n", total, query, len(results)))
+		fmt.Fprintf(&sb, "Found %d instance type(s) matching %q (showing the top %d — narrow the query for the rest):\n\n", total, query, len(results))
 	} else {
-		sb.WriteString(fmt.Sprintf("Found %d instance type(s) matching %q:\n\n", total, query))
+		fmt.Fprintf(&sb, "Found %d instance type(s) matching %q:\n\n", total, query)
 	}
 
 	for _, r := range results {
-		sb.WriteString(fmt.Sprintf("**%s** (%s)\n", r.InstanceType, r.Region))
-		sb.WriteString(fmt.Sprintf("  vCPUs: %d  Memory: %.1f GiB  Arch: %s\n",
-			r.VCPUs, float64(r.MemoryMiB)/1024.0, r.Architecture))
+		fmt.Fprintf(&sb, "**%s** (%s)\n", r.InstanceType, r.Region)
+		fmt.Fprintf(&sb, "  vCPUs: %d  Memory: %.1f GiB  Arch: %s\n",
+			r.VCPUs, float64(r.MemoryMiB)/1024.0, r.Architecture)
 		if r.GPUs > 0 {
-			sb.WriteString(fmt.Sprintf("  GPUs: %d× %s (%s, %.0f GB VRAM)\n",
-				r.GPUs, r.GPUModel, r.GPUManufacturer, float64(r.GPUMemoryMiB)/1024.0))
+			fmt.Fprintf(&sb, "  GPUs: %d× %s (%s, %.0f GB VRAM)\n",
+				r.GPUs, r.GPUModel, r.GPUManufacturer, float64(r.GPUMemoryMiB)/1024.0)
 		}
 		if r.OnDemandPrice > 0 {
-			sb.WriteString(fmt.Sprintf("  On-Demand: $%.4f/hr\n", r.OnDemandPrice))
+			fmt.Fprintf(&sb, "  On-Demand: $%.4f/hr\n", r.OnDemandPrice)
 		}
 		if sp, ok := spotByType[r.InstanceType]; ok {
-			sb.WriteString(fmt.Sprintf("  Spot: $%.4f/hr (%.0f%% savings, %s)\n",
-				sp.SpotPrice, sp.SavingsPercent, sp.AvailabilityZone))
+			fmt.Fprintf(&sb, "  Spot: $%.4f/hr (%.0f%% savings, %s)\n",
+				sp.SpotPrice, sp.SavingsPercent, sp.AvailabilityZone)
 		}
 		if len(r.AvailableAZs) > 0 {
-			sb.WriteString(fmt.Sprintf("  Available AZs: %s\n", strings.Join(r.AvailableAZs, ", ")))
+			fmt.Fprintf(&sb, "  Available AZs: %s\n", strings.Join(r.AvailableAZs, ", "))
 		}
 		// Human-readable match reasons ("GPU: A100 (80 GiB, training)", "memory ≥
 		// 64 GiB") from truffle — tells the caller WHY each type matched, which is
 		// far more useful to an assistant than the bare specs.
 		if reasons := find.ExplainMatch(r, pq); len(reasons) > 0 {
-			sb.WriteString(fmt.Sprintf("  Why: %s\n", strings.Join(reasons, "; ")))
+			fmt.Fprintf(&sb, "  Why: %s\n", strings.Join(reasons, "; "))
 		}
 		sb.WriteString("\n")
 	}
@@ -235,11 +235,11 @@ func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Spot prices for %s:\n\n", instanceType))
+	fmt.Fprintf(&sb, "Spot prices for %s:\n\n", instanceType)
 	for _, sp := range spotPrices {
-		sb.WriteString(fmt.Sprintf("  %s (%s): $%.4f/hr", sp.Region, sp.AvailabilityZone, sp.SpotPrice))
+		fmt.Fprintf(&sb, "  %s (%s): $%.4f/hr", sp.Region, sp.AvailabilityZone, sp.SpotPrice)
 		if sp.OnDemandPrice > 0 {
-			sb.WriteString(fmt.Sprintf("  [on-demand: $%.4f/hr, %.0f%% savings]", sp.OnDemandPrice, sp.SavingsPercent))
+			fmt.Fprintf(&sb, "  [on-demand: $%.4f/hr, %.0f%% savings]", sp.OnDemandPrice, sp.SavingsPercent)
 		}
 		sb.WriteString("\n")
 	}
@@ -294,8 +294,8 @@ func handleTruffleQuotaCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Quota check: %s %s in %s\n", instanceType, quotaType, region))
-	sb.WriteString(fmt.Sprintf("Instance family: %s  vCPUs required: %d\n\n", family, vcpus))
+	fmt.Fprintf(&sb, "Quota check: %s %s in %s\n", instanceType, quotaType, region)
+	fmt.Fprintf(&sb, "Instance family: %s  vCPUs required: %d\n\n", family, vcpus)
 
 	quotaMap := info.OnDemand
 	if isSpot {
@@ -303,16 +303,16 @@ func handleTruffleQuotaCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	}
 	if q, ok := quotaMap[family]; ok {
 		usage := info.Usage[family]
-		sb.WriteString(fmt.Sprintf("Quota: %d vCPUs  In use: %d vCPUs  Available: %d vCPUs\n", q, usage, q-usage))
+		fmt.Fprintf(&sb, "Quota: %d vCPUs  In use: %d vCPUs  Available: %d vCPUs\n", q, usage, q-usage)
 	}
 
 	if canLaunch {
-		sb.WriteString(fmt.Sprintf("\n✅ Launch allowed: %s", msg))
+		fmt.Fprintf(&sb, "\n✅ Launch allowed: %s", msg)
 	} else {
-		sb.WriteString(fmt.Sprintf("\n❌ Launch blocked: %s\n", msg))
+		fmt.Fprintf(&sb, "\n❌ Launch blocked: %s\n", msg)
 		cmd := quotas.QuotaIncreaseCommand(region, family, vcpus*2, isSpot)
 		if cmd != "" {
-			sb.WriteString(fmt.Sprintf("\nTo request a quota increase:\n  %s\n", cmd))
+			fmt.Fprintf(&sb, "\nTo request a quota increase:\n  %s\n", cmd)
 		}
 	}
 

@@ -159,7 +159,7 @@ func handleLagottoList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Found %d watch(es):\n\n", len(watches)))
+	fmt.Fprintf(&sb, "Found %d watch(es):\n\n", len(watches))
 	for i := range watches {
 		w := &watches[i]
 		w.ComputeDurations()
@@ -167,21 +167,21 @@ func handleLagottoList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		if w.DesiredCount > 0 {
 			action = fmt.Sprintf("%s×%d", w.Action, w.DesiredCount)
 		}
-		sb.WriteString(fmt.Sprintf("• %s  [%s]\n", w.WatchID, w.Status))
-		sb.WriteString(fmt.Sprintf("  Project: %s  Owner: %s\n", dashIfEmpty(w.Project), shortOwner(w.UserID)))
-		sb.WriteString(fmt.Sprintf("  Pattern: %s  Regions: %s\n", w.InstanceTypePattern, displayRegions(w.Regions)))
-		sb.WriteString(fmt.Sprintf("  Action: %s  Spot: %v", action, w.Spot))
+		fmt.Fprintf(&sb, "• %s  [%s]\n", w.WatchID, w.Status)
+		fmt.Fprintf(&sb, "  Project: %s  Owner: %s\n", dashIfEmpty(w.Project), shortOwner(w.UserID))
+		fmt.Fprintf(&sb, "  Pattern: %s  Regions: %s\n", w.InstanceTypePattern, displayRegions(w.Regions))
+		fmt.Fprintf(&sb, "  Action: %s  Spot: %v", action, w.Spot)
 		if w.MaxPrice > 0 {
-			sb.WriteString(fmt.Sprintf("  Max price: $%.4f/hr", w.MaxPrice))
+			fmt.Fprintf(&sb, "  Max price: $%.4f/hr", w.MaxPrice)
 		}
 		sb.WriteString("\n")
 		if d, ok := w.WaitToAcquire(); ok {
-			sb.WriteString(fmt.Sprintf("  Wait to acquire: %s\n", watcher.FormatWait(d)))
+			fmt.Fprintf(&sb, "  Wait to acquire: %s\n", watcher.FormatWait(d))
 		}
 		if d, ok := w.TimeToGiveUp(); ok {
-			sb.WriteString(fmt.Sprintf("  Time to give up: %s\n", watcher.FormatWait(d)))
+			fmt.Fprintf(&sb, "  Time to give up: %s\n", watcher.FormatWait(d))
 		}
-		sb.WriteString(fmt.Sprintf("  Expires: %s\n\n", w.ExpiresAt.Format(time.RFC3339)))
+		fmt.Fprintf(&sb, "  Expires: %s\n\n", w.ExpiresAt.Format(time.RFC3339))
 	}
 	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
 }
@@ -219,52 +219,52 @@ func handleLagottoStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 	w.ComputeDurations()
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Watch:    %s\n", w.WatchID))
-	sb.WriteString(fmt.Sprintf("Status:   %s\n", w.Status))
+	fmt.Fprintf(&sb, "Watch:    %s\n", w.WatchID)
+	fmt.Fprintf(&sb, "Status:   %s\n", w.Status)
 	if w.Project != "" {
-		sb.WriteString(fmt.Sprintf("Project:  %s\n", w.Project))
+		fmt.Fprintf(&sb, "Project:  %s\n", w.Project)
 	}
 	if w.UserID != "" {
-		sb.WriteString(fmt.Sprintf("Owner:    %s\n", w.UserID))
+		fmt.Fprintf(&sb, "Owner:    %s\n", w.UserID)
 	}
-	sb.WriteString(fmt.Sprintf("Pattern:  %s\n", w.InstanceTypePattern))
-	sb.WriteString(fmt.Sprintf("Regions:  %s\n", displayRegions(w.Regions)))
+	fmt.Fprintf(&sb, "Pattern:  %s\n", w.InstanceTypePattern)
+	fmt.Fprintf(&sb, "Regions:  %s\n", displayRegions(w.Regions))
 	if len(w.AvailabilityZones) > 0 {
-		sb.WriteString(fmt.Sprintf("AZs:      %s\n", strings.Join(w.AvailabilityZones, ", ")))
+		fmt.Fprintf(&sb, "AZs:      %s\n", strings.Join(w.AvailabilityZones, ", "))
 	}
-	sb.WriteString(fmt.Sprintf("Spot:     %v\n", w.Spot))
+	fmt.Fprintf(&sb, "Spot:     %v\n", w.Spot)
 	if w.MaxPrice > 0 {
-		sb.WriteString(fmt.Sprintf("Max price: $%.4f/hr\n", w.MaxPrice))
+		fmt.Fprintf(&sb, "Max price: $%.4f/hr\n", w.MaxPrice)
 	}
-	sb.WriteString(fmt.Sprintf("Action:   %s\n", w.Action))
+	fmt.Fprintf(&sb, "Action:   %s\n", w.Action)
 	if w.DesiredCount > 0 {
-		sb.WriteString(fmt.Sprintf("Fleet:    maintain %d worker(s)\n", w.DesiredCount))
+		fmt.Fprintf(&sb, "Fleet:    maintain %d worker(s)\n", w.DesiredCount)
 		if w.CompletionCondition != "" {
-			sb.WriteString(fmt.Sprintf("Until:    %s\n", w.CompletionCondition))
+			fmt.Fprintf(&sb, "Until:    %s\n", w.CompletionCondition)
 		}
 	}
-	sb.WriteString(fmt.Sprintf("Created:  %s\n", w.CreatedAt.Format(time.RFC3339)))
-	sb.WriteString(fmt.Sprintf("Expires:  %s\n", w.ExpiresAt.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "Created:  %s\n", w.CreatedAt.Format(time.RFC3339))
+	fmt.Fprintf(&sb, "Expires:  %s\n", w.ExpiresAt.Format(time.RFC3339))
 	if !w.LastPolledAt.IsZero() {
-		sb.WriteString(fmt.Sprintf("Last polled: %s\n", w.LastPolledAt.Format(time.RFC3339)))
+		fmt.Fprintf(&sb, "Last polled: %s\n", w.LastPolledAt.Format(time.RFC3339))
 	}
-	sb.WriteString(fmt.Sprintf("Matches:  %d\n", w.MatchCount))
+	fmt.Fprintf(&sb, "Matches:  %d\n", w.MatchCount)
 	if d, ok := w.WaitToAcquire(); ok {
-		sb.WriteString(fmt.Sprintf("Wait to acquire: %s\n", watcher.FormatWait(d)))
+		fmt.Fprintf(&sb, "Wait to acquire: %s\n", watcher.FormatWait(d))
 	}
 	if d, ok := w.TimeToGiveUp(); ok {
-		sb.WriteString(fmt.Sprintf("Time to give up: %s\n", watcher.FormatWait(d)))
+		fmt.Fprintf(&sb, "Time to give up: %s\n", watcher.FormatWait(d))
 	}
 	if m := w.LastMatch; m != nil {
 		sb.WriteString("\nLast match:\n")
-		sb.WriteString(fmt.Sprintf("  Instance: %s\n", m.InstanceType))
-		sb.WriteString(fmt.Sprintf("  Region:   %s\n", m.Region))
-		sb.WriteString(fmt.Sprintf("  AZ:       %s\n", m.AvailabilityZone))
-		sb.WriteString(fmt.Sprintf("  Price:    $%.4f/hr\n", m.Price))
-		sb.WriteString(fmt.Sprintf("  Spot:     %v\n", m.IsSpot))
-		sb.WriteString(fmt.Sprintf("  Action:   %s\n", m.ActionTaken))
+		fmt.Fprintf(&sb, "  Instance: %s\n", m.InstanceType)
+		fmt.Fprintf(&sb, "  Region:   %s\n", m.Region)
+		fmt.Fprintf(&sb, "  AZ:       %s\n", m.AvailabilityZone)
+		fmt.Fprintf(&sb, "  Price:    $%.4f/hr\n", m.Price)
+		fmt.Fprintf(&sb, "  Spot:     %v\n", m.IsSpot)
+		fmt.Fprintf(&sb, "  Action:   %s\n", m.ActionTaken)
 		if m.InstanceID != "" {
-			sb.WriteString(fmt.Sprintf("  Instance ID: %s\n", m.InstanceID))
+			fmt.Fprintf(&sb, "  Instance ID: %s\n", m.InstanceID)
 		}
 	}
 	return mcp.NewToolResultText(sb.String()), nil
@@ -397,17 +397,17 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	auditLog("lagotto_watch", w.WatchID, "", "")
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("✅ Created watch %s\n", w.WatchID))
-	sb.WriteString(fmt.Sprintf("  Pattern: %s\n", w.InstanceTypePattern))
-	sb.WriteString(fmt.Sprintf("  Regions: %s\n", displayRegions(w.Regions)))
+	fmt.Fprintf(&sb, "✅ Created watch %s\n", w.WatchID)
+	fmt.Fprintf(&sb, "  Pattern: %s\n", w.InstanceTypePattern)
+	fmt.Fprintf(&sb, "  Regions: %s\n", displayRegions(w.Regions))
 	if w.Project != "" {
-		sb.WriteString(fmt.Sprintf("  Project: %s\n", w.Project))
+		fmt.Fprintf(&sb, "  Project: %s\n", w.Project)
 	}
-	sb.WriteString(fmt.Sprintf("  Spot:    %v\n", w.Spot))
-	sb.WriteString(fmt.Sprintf("  Action:  %s\n", w.Action))
+	fmt.Fprintf(&sb, "  Spot:    %v\n", w.Spot)
+	fmt.Fprintf(&sb, "  Action:  %s\n", w.Action)
 	if w.Action == watcher.ActionHold {
 		sb.WriteString("  Note:    hold reserves billable On-Demand capacity on match.\n")
 	}
-	sb.WriteString(fmt.Sprintf("  Expires: %s\n", w.ExpiresAt.Format(time.RFC3339)))
+	fmt.Fprintf(&sb, "  Expires: %s\n", w.ExpiresAt.Format(time.RFC3339))
 	return mcp.NewToolResultText(sb.String()), nil
 }

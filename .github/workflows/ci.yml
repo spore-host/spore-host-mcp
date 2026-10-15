@@ -25,7 +25,7 @@ jobs:
           go-version: '1.26.9'
           cache: true
       # Formatting gate (#26). Runs first because it's the cheapest check and the
-      # fastest to act on. Nothing checked formatting before — this repo has no
+      # fastest to act on. Nothing checked formatting before — this repo had no
       # Makefile, so there wasn't even a local `fmt` target anyone might run. The
       # tree happened to be clean when this landed; the gate is what keeps it
       # that way (the siblings drifted for months without one — spawn#484 had 3
@@ -145,3 +145,40 @@ jobs:
           fail_ci_if_error: false
       - name: Vet
         run: go vet ./...
+
+  # Lint gate (#54). Nothing ran golangci-lint, so 107 staticcheck findings
+  # (QF1012) piled up on main unnoticed — the default output caps repeats, which
+  # is why the issue counted 50. CI runs the same `make lint` target contributors
+  # do, so the repo's golangci-lint config (none today: built-in defaults; a
+  # .golangci.yml at the root would be picked up automatically) is the one that
+  # gates. Mirrors truffle#192 / lagotto#183 / spawn#923.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.9'
+
+      # Pinned version AND pinned hash: a version with no hash runs a replaced
+      # release asset unnoticed, and the hash lives HERE rather than being read
+      # from the release's checksums.txt, because a file fetched alongside the
+      # download can be replaced alongside it. Cross-checked against
+      # golangci-lint-2.14.0-checksums.txt when pinned. Keep VER in step with
+      # GOLANGCI_LINT_VERSION in the Makefile (ci_gates_test.go checks). Bumping
+      # the version can surface new findings; fix them in the same PR.
+      - name: Install golangci-lint
+        run: |
+          VER=2.14.0
+          SHA256=ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab
+          T="golangci-lint-${VER}-linux-amd64.tar.gz"
+          curl -sSLf -o "/tmp/$T" "https://github.com/golangci/golangci-lint/releases/download/v${VER}/$T"
+          echo "$SHA256  /tmp/$T" | sha256sum -c -
+          tar -xzf "/tmp/$T" -C /usr/local/bin --strip-components=1 "golangci-lint-${VER}-linux-amd64/golangci-lint"
+          golangci-lint version
+
+      - name: Lint gate
+        run: make lint
