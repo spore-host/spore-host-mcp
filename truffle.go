@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -101,6 +102,13 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 
 	pq, err := find.ParseQuery(query)
 	if err != nil {
+		// A query of only unknown words (truffle#229) used to search the whole
+		// catalog; truffle now refuses it, and its message already names the
+		// words, suggests close ones and lists what find understands (#56).
+		var uq *find.UnrecognizedQueryError
+		if errors.As(err, &uq) {
+			return mcp.NewToolResultError(uq.Error()), nil
+		}
 		return mcp.NewToolResultError(fmt.Sprintf("parse query: %v", err)), nil
 	}
 
@@ -128,7 +136,12 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	if len(results) == 0 {
-		return mcp.NewToolResultText(fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))), nil
+		msg := fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))
+		if pq.HasNoMatchingFamily() {
+			// e.g. "intel h100": the constraints exclude each other (truffle#229).
+			msg += "\nNo instance family satisfies all of the query's constraints together; drop one, or add \"or\" to match any of them."
+		}
+		return mcp.NewToolResultText(findQueryNotes(pq) + msg), nil
 	}
 
 	// Cap the rendered results. A broad query ("gpu", "arm64") can match hundreds
@@ -150,7 +163,24 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		spotByType[sp.InstanceType] = sp
 	}
 
-	return mcp.NewToolResultText(renderFindResults(query, results, total, spotByType, pq)), nil
+	return mcp.NewToolResultText(findQueryNotes(pq) + renderFindResults(query, results, total, spotByType, pq)), nil
+}
+
+// findQueryNotes says how the query was read where that is not obvious, as
+// truffle's CLI does: words it ignored, and a bare size in a GPU query taken
+// as per-GPU memory. Empty when there is nothing to say.
+func findQueryNotes(pq *find.ParsedQuery) string {
+	var sb strings.Builder
+	if unknown := pq.UnknownTerms(); len(unknown) > 0 {
+		fmt.Fprintf(&sb, "Note: ignored unknown term(s): %s\n", strings.Join(unknown, ", "))
+	}
+	if note := pq.MemoryReadingNote(); note != "" {
+		fmt.Fprintln(&sb, note)
+	}
+	if sb.Len() > 0 {
+		sb.WriteString("\n")
+	}
+	return sb.String()
 }
 
 // renderFindResults formats truffle_find output. results is the (already-capped)
