@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`truffle_find` explains a query it cannot read instead of failing with
+  `parse query: ...`** (#56). A query of only unknown words (`zzqx`,
+  `gravitn xlrage`) used to search and price the whole catalog; truffle now
+  refuses it (truffle#229), and `truffle_find` returns truffle's own message,
+  which names the words, suggests close ones and lists the kinds of term it
+  understands. A query that runs but ignored a word now says which, a bare size
+  in a GPU query says it was read as per-GPU memory, and a query whose
+  constraints exclude each other (`intel h100`) says so when nothing matches.
 - **CI now runs golangci-lint, and the 107 findings it reported are fixed**
   (#54). All were staticcheck QF1012 (`sb.WriteString(fmt.Sprintf(...))`),
   now `fmt.Fprintf(&sb, ...)` across `lagotto.go`, `launch.go`, `spawn.go` and
@@ -62,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Builds against spawn v0.131.0, truffle v0.59.0 and libs v0.51.1** (from
+  spawn v0.126.1, truffle v0.58.0 and libs v0.50.0).
 - **Dependencies caught up to current**: `spawn` 0.111.0 → 0.126.1, `mcp-go` 1.0.0 →
   1.1.1, `libs` 0.49.0 → 0.50.0, `truffle` 0.56.0 → 0.58.0, plus the transitive AWS
   SDK and protobuf updates.
