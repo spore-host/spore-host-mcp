@@ -1,21 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"regexp"
+	"io"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spore-host/libs/catalog"
 	spawnclient "github.com/spore-host/spawn/pkg/aws"
-	"github.com/spore-host/spawn/pkg/ecrref"
-	"github.com/spore-host/spawn/pkg/launcher"
+	"github.com/spore-host/spawn/pkg/tasklaunch"
 	"github.com/spore-host/spawn/pkg/taskproto"
-	truffleaws "github.com/spore-host/truffle/pkg/aws"
 )
 
 // registerLaunchTools registers the two spawn LAUNCH tools. Both create real,
@@ -69,46 +67,26 @@ func registerLaunchTools(s *server.MCPServer) {
 	), handleSpawnAppLaunch)
 }
 
-// mcpTaskFinder adapts truffle's SearchInstanceTypes to taskproto.InstanceFinder,
-// mirroring spawn's own truffleFinder (cmd/task.go): it searches one region and
-// projects each result to a taskproto.Candidate, looking up the on-demand price
-// explicitly (SearchInstanceTypes doesn't populate it) so the sizer ranks on
-// real price rather than picking the largest type on a tie.
-type mcpTaskFinder struct {
-	tc     *truffleaws.Client
-	region string
-}
-
-func (f mcpTaskFinder) FindCandidates(ctx context.Context, req taskproto.ResourceRequest) ([]taskproto.Candidate, error) {
-	matcher := regexp.MustCompile(`.*`)
-	opts := truffleaws.FilterOptions{
-		Architecture: req.Architecture,
-		MinVCPUs:     req.CPU,
-		MinMemory:    taskproto.EffectiveMemoryGiB(req),
-	}
-	results, err := f.tc.SearchInstanceTypes(ctx, []string{f.region}, matcher, opts)
+// newTaskDeps builds what spawn_task_run plans and launches with, and resolves
+// the region. It is a variable so tests can hand the real handler fake
+// dependencies; nothing else assigns it.
+//
+// The dependencies are spawn's own (tasklaunch.NewDeps): the same finder, the
+// same account-side calls and the same launcher.Provision the `spawn task run`
+// CLI uses. Progress and warnings, including the label on any static price the
+// finder ranked on and the Spot-to-On-Demand fallback notice, go to notes.
+var newTaskDeps = func(ctx context.Context, region string, notes io.Writer) (tasklaunch.Deps, string, error) {
+	client, err := spawnClient(ctx)
 	if err != nil {
-		return nil, err
+		return tasklaunch.Deps{}, "", fmt.Errorf("failed to connect to AWS: %w", err)
 	}
-	cands := make([]taskproto.Candidate, 0, len(results))
-	for _, r := range results {
-		price := r.OnDemandPrice
-		if price <= 0 {
-			if p, perr := f.tc.OnDemandPrice(ctx, r.InstanceType, f.region); perr == nil {
-				price = p
-			}
-		}
-		cands = append(cands, taskproto.Candidate{
-			InstanceType:  r.InstanceType,
-			Family:        r.InstanceFamily,
-			VCPUs:         int(r.VCPUs),
-			MemoryGiB:     float64(r.MemoryMiB) / 1024,
-			GPUs:          int(r.GPUs),
-			Architecture:  r.Architecture,
-			OnDemandPrice: price,
-		})
+	if region == "" {
+		region = client.Config().Region
 	}
-	return cands, nil
+	if region == "" {
+		return tasklaunch.Deps{}, "", fmt.Errorf("no region: pass region or configure a default AWS region")
+	}
+	return tasklaunch.NewDeps(client, region, notes), region, nil
 }
 
 func handleSpawnTaskRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -132,144 +110,90 @@ func handleSpawnTaskRun(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	// Placement storage (attached volumes / EFS / FSx) needs the CLI's boot-time
-	// mount-script machinery; not wired here. Reject clearly rather than launch a
-	// task whose storage won't mount.
+	// Placement storage (attached volumes / EFS / FSx) is not offered through
+	// MCP. Reject clearly rather than launch it from here.
 	if len(spec.Placement.Volumes) > 0 || spec.Placement.EFSID != "" || spec.Placement.FSxLustreID != "" {
 		return mcp.NewToolResultError("placement storage (volumes / efs_id / fsx_lustre_id) is not supported via MCP; launch this task with the spawn CLI: spawn task run --spec <file>"), nil
 	}
 
-	client, err := spawnClient(ctx)
+	var notes bytes.Buffer
+	deps, region, err := newTaskDeps(ctx, region, &notes)
 	if err != nil {
-		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
+		return mcp.NewToolResultError(err.Error()), nil
 	}
-	if region == "" {
-		region = client.Config().Region
-	}
-	if region == "" {
-		return mcp.NewToolResultError("no region: pass region or configure a default AWS region"), nil
-	}
-
-	finder := mcpTaskFinder{tc: truffleaws.NewClientFromConfig(client.Config()), region: region}
 
 	if dryRun {
-		return renderTaskPlan(ctx, spec, finder, region)
+		return planTask(ctx, deps, spec, region, &notes)
 	}
-
-	return runTaskReal(ctx, client, spec, finder, region)
+	return launchTask(ctx, deps, spec, region, &notes)
 }
 
-// renderTaskPlan sizes the task and renders the launch plan WITHOUT launching —
-// the dry_run path. Mirrors spawn's renderTaskDryRun output.
-func renderTaskPlan(ctx context.Context, spec *taskproto.TaskSpec, finder taskproto.InstanceFinder, region string) (*mcp.CallToolResult, error) {
-	sized, err := taskproto.Size(ctx, finder, spec.Resources)
+// planTask is the dry run: spawn's own Plan and Render, the output of
+// `spawn task run --dry-run`, plus the plan's warnings and any notes the finder
+// wrote (a static-price label, for one). Nothing is created.
+func planTask(ctx context.Context, deps tasklaunch.Deps, spec *taskproto.TaskSpec, region string, notes *bytes.Buffer) (*mcp.CallToolResult, error) {
+	plan, err := tasklaunch.Plan(ctx, deps, spec, region)
 	if err != nil {
-		return mcp.NewToolResultError("size task: " + err.Error()), nil
+		return mcp.NewToolResultError("plan task: " + err.Error()), nil
 	}
-
 	var sb strings.Builder
-	sb.WriteString("DRY RUN — nothing will be launched.\n\n")
-	fmt.Fprintf(&sb, "Task:      %s\n", spec.TaskID)
-	fmt.Fprintf(&sb, "Command:   %s\n", strings.Join(spec.Command, " "))
-	if spec.Container != "" {
-		fmt.Fprintf(&sb, "Container: %s\n", spec.Container)
+	tasklaunch.Render(&sb, plan)
+	for _, w := range plan.Warnings {
+		sb.WriteString(w)
 	}
-	fmt.Fprintf(&sb, "Region:    %s\n", region)
-	fmt.Fprintf(&sb, "Instance:  %s  (%d vCPU, %.0f GiB", sized.InstanceType, sized.VCPUs, sized.MemoryGiB)
-	if sized.OnDemandPrice > 0 {
-		fmt.Fprintf(&sb, ", $%.4f/hr on-demand", sized.OnDemandPrice)
-	}
-	fmt.Fprintf(&sb, ")\n           chosen as cheapest of %d matching type(s)\n", sized.Considered)
-	fmt.Fprintf(&sb, "AMI:       %s\n", taskAMIPlan(spec, sized.InstanceType))
-	purchase := spec.Resources.Purchase
-	if purchase == "" {
-		purchase = taskproto.PurchaseOnDemand
-	}
-	fmt.Fprintf(&sb, "Purchase:  %s\n", purchase)
-	fmt.Fprintf(&sb, "TTL:       %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete())
-	if spec.Lifecycle.CostLimit > 0 {
-		fmt.Fprintf(&sb, "Cost limit: $%.2f\n", spec.Lifecycle.CostLimit)
-	}
-	if d, err := time.ParseDuration(spec.Lifecycle.TTL); err == nil && sized.OnDemandPrice > 0 {
-		fmt.Fprintf(&sb, "Max cost:  ~$%.2f (on-demand rate × TTL; a completed task usually costs far less)\n", sized.OnDemandPrice*d.Hours())
-	}
+	writeNotes(&sb, notes)
 	sb.WriteString("\nRe-run with dry_run=false to launch this task.")
 	return mcp.NewToolResultText(sb.String()), nil
 }
 
-// runTaskReal launches a task for real: ensures the per-account results bucket,
-// generates the on-instance wrapper, creates a scoped instance profile, and
-// launches via launcher.Provision (keyless/SSM). Reproduces spawn's runTaskReal
-// (cmd/task.go) using its exported library surface; placement storage is handled
-// separately (rejected by the caller for MCP).
-func runTaskReal(ctx context.Context, client *spawnclient.Client, spec *taskproto.TaskSpec, finder taskproto.InstanceFinder, region string) (*mcp.CallToolResult, error) {
-	sized, err := taskproto.Size(ctx, finder, spec.Resources)
-	if err != nil {
-		return mcp.NewToolResultError("size task: " + err.Error()), nil
-	}
-
-	account, err := client.GetAccountID(ctx)
-	if err != nil {
-		return mcp.NewToolResultError("resolve account id: " + err.Error()), nil
-	}
-	resultsBucket := fmt.Sprintf("spawn-results-%s-%s", account, region)
-	if err := client.CreateS3BucketIfNotExists(ctx, resultsBucket, region); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("ensure results bucket %s: %v", resultsBucket, err)), nil
-	}
-
-	// GPU-ness is decided from the SIZED instance type, not from the spec alone
-	// (spawn#601/#606): a task that asked only via `families` can still be sized
-	// onto a GPU box, and the wrapper needs `docker run --gpus all` plus the
-	// NVIDIA Container Toolkit for the driver to attach. Mirrors spawn's own
-	// derivation in cmd/task.go so the two cannot drift.
-
-	// A fresh run identity per attempt (spawn#608). Re-running a task_id
-	// overwrites the same tasks/<task_id>/completion.json key, so without an
-	// attempt id a record left by a PREVIOUS attempt is indistinguishable from
-	// this one's — and a waiter returns it as the answer while the new instance is
-	// still running, reporting a fixed task as still failing.
-	//
-	// Passing "" here would compile and emit an empty run_id, which reads
-	// downstream as "unattributable" — i.e. it would silently reintroduce that
-	// false negative in the MCP path only. It has to be minted.
-
-	// The options are a struct rather than five positional arguments precisely
-	// because of the comment above (spawn#764, split from spawn#679). An omitted
-	// RunID or ResultsPrefix is now an error from GenerateWrapper instead of a
-	// script with an empty run_id, so the failure this comment describes can no
-	// longer be introduced by a padding edit — which is how it was introduced
-	// here the first time.
-	wrapper, err := taskproto.GenerateWrapper(spec,
-		wrapperOptionsFor(spec, sized.InstanceType, resultsBucket, region))
-	if err != nil {
-		return mcp.NewToolResultError("build task wrapper: " + err.Error()), nil
-	}
-
-	profile, err := client.CreateOrGetInstanceProfile(ctx, spawnclient.IAMRoleConfig{
-		TrustServices:    []string{"ec2"},
-		InlinePolicyJSON: taskStagingPolicy(s3Buckets(spec.Inputs), s3Buckets(spec.Outputs), resultsBucket, s3BucketsFromURIs(spec.Resources.S3ReadWrite)),
-		Policies:         taskExtraPolicies(spec),
-	})
-	if err != nil {
-		return mcp.NewToolResultError("create task instance profile: " + err.Error()), nil
-	}
-
-	cfg := taskLaunchConfig(spec, sized, region, profile, wrapper)
-
+// launchTask launches the task through spawn's tasklaunch.Launch, the code
+// behind `spawn task run`: it sizes with the container memory floor (#60),
+// retries a Spot capacity failure On-Demand with the same launcher.Options when
+// the spec asks for it (#61), and writes the task's records under the resolved
+// results prefix, honouring the spec's results_prefix and creating only
+// spawn's own bucket (#64). Everything reported here is read from the result,
+// so the reported completion path is the one the instance writes.
+func launchTask(ctx context.Context, deps tasklaunch.Deps, spec *taskproto.TaskSpec, region string, notes *bytes.Buffer) (*mcp.CallToolResult, error) {
 	auditLog("spawn_task_run", spec.TaskID, "", region)
 
-	result, err := launcher.Provision(ctx, client, cfg, launcher.Options{})
+	res, err := tasklaunch.Launch(ctx, deps, spec, region)
 	if err != nil {
-		return mcp.NewToolResultError("launch task: " + err.Error()), nil
+		var sb strings.Builder
+		sb.WriteString(err.Error())
+		writeNotes(&sb, notes)
+		return mcp.NewToolResultError(sb.String()), nil
 	}
 
+	purchase := "On-Demand"
+	if res.Spot {
+		purchase = "Spot"
+	}
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "✅ Task launched: %s\n", spec.TaskID)
-	fmt.Fprintf(&sb, "Instance:   %s  (%s) in %s / %s\n", result.InstanceID, sized.InstanceType, result.Region, orDash(result.AvailabilityZone))
+	fmt.Fprintf(&sb, "✅ Task launched: %s\n", res.TaskID)
+	fmt.Fprintf(&sb, "Instance:   %s  (%s, %s) in %s / %s\n", res.InstanceID, res.InstanceType, purchase, res.Region, orDash(res.AvailabilityZone))
+	fmt.Fprintf(&sb, "Run ID:     %s\n", res.RunID)
 	fmt.Fprintf(&sb, "TTL:        %s   on-complete: %s\n", spec.Lifecycle.TTL, spec.EffectiveOnComplete())
-	fmt.Fprintf(&sb, "Completion: s3://%s/tasks/%s/completion.json\n", resultsBucket, spec.TaskID)
-	fmt.Fprintf(&sb, "\nPoll for completion:\n  spawn task status %s --region %s\n", spec.TaskID, region)
+	fmt.Fprintf(&sb, "Completion: %s\n", completionURI(res))
+	writeNotes(&sb, notes)
+	fmt.Fprintf(&sb, "\nPoll for completion with spawn_status %s, or:\n  spawn task status %s --region %s", res.TaskID, res.TaskID, res.Region)
+	if spec.ResultsPrefix != "" {
+		fmt.Fprintf(&sb, " --results-prefix %s", spec.ResultsPrefix)
+	}
+	sb.WriteString("\n")
 	return mcp.NewToolResultText(sb.String()), nil
+}
+
+// completionURI is where the launched task's completion record lands: the
+// resolved results prefix tasklaunch handed the wrapper, plus completion.json.
+func completionURI(res *tasklaunch.Result) string {
+	return res.ResultsPrefix + "/completion.json"
+}
+
+// writeNotes appends what spawn wrote to the notes writer, if anything.
+func writeNotes(sb *strings.Builder, notes *bytes.Buffer) {
+	if n := strings.TrimSpace(notes.String()); n != "" {
+		sb.WriteString("\n" + n + "\n")
+	}
 }
 
 func orDash(s string) string {
@@ -277,145 +201,6 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
-}
-
-// taskAMIPlan mirrors spawn's offline AMI classification (cmd/task.go): an
-// explicit AMI wins; a GPU family gets the NVIDIA DLAMI; everything else the
-// standard AL2023 for the architecture. Uses the same exported classifiers the
-// real resolver (GetRecommendedAMI) uses, so the preview can't drift.
-func taskAMIPlan(spec *taskproto.TaskSpec, instanceType string) string {
-	if ami := strings.TrimSpace(spec.Placement.AMI); ami != "" {
-		return ami + "  (explicit: placement.ami)"
-	}
-	arch := spawnclient.DetectArchitecture(instanceType)
-	if spawnclient.DetectGPUInstance(instanceType) {
-		return fmt.Sprintf("AL2023 GPU DLAMI — NVIDIA driver, %s (auto-selected for GPU instance %s)", arch, instanceType)
-	}
-	return fmt.Sprintf("AL2023 default — %s (auto-selected)", arch)
-}
-
-// taskLaunchConfig builds the aws.LaunchConfig for a task, reproducing spawn's
-// cmd/task.go taskLaunchConfig. AMI / UserData / KeyName are left for
-// launcher.Provision to fill (auto AMI, keyless/SSM, wrapper-as-command).
-func taskLaunchConfig(spec *taskproto.TaskSpec, sized *taskproto.SizeResult, region, iamProfile, wrapper string) spawnclient.LaunchConfig {
-	cfg := spawnclient.LaunchConfig{
-		InstanceType:       sized.InstanceType,
-		Region:             region,
-		JobArrayCommand:    wrapper,
-		Spot:               spec.Resources.Purchase == taskproto.PurchaseSpot,
-		TTL:                spec.Lifecycle.TTL,
-		OnComplete:         spec.EffectiveOnComplete(),
-		CompletionFile:     "/tmp/SPAWN_COMPLETE",
-		CompletionDelay:    "10s",
-		Name:               spec.TaskID,
-		IamInstanceProfile: iamProfile,
-		Tags:               map[string]string{"spawn:task-id": spec.TaskID},
-	}
-	cfg.AMI = spec.Placement.AMI
-	cfg.AvailabilityZone = spec.Placement.AvailabilityZone
-	if spec.Resources.DiskGiB > 0 {
-		cfg.RootVolumeSizeGiB = spec.Resources.DiskGiB
-	}
-	if spec.Lifecycle.CostLimit > 0 {
-		cfg.CostLimit = spec.Lifecycle.CostLimit
-	}
-	return cfg
-}
-
-// taskExtraPolicies returns the extra IAM policy-template names a task needs: a
-// private-ECR container image needs ecr:ReadOnly to pull. Mirrors cmd/task.go.
-func taskExtraPolicies(spec *taskproto.TaskSpec) []string {
-	if spec.Container != "" && ecrref.Account(spec.Container) != "" {
-		return []string{"ecr:ReadOnly"}
-	}
-	return nil
-}
-
-// taskStagingPolicy builds a scoped S3 policy granting read on the input buckets
-// and write on the output + results buckets, plus full read-write on any
-// s3_read_write buckets. Reproduces spawn's cmd/task.go taskStagingPolicy.
-func taskStagingPolicy(inputBuckets, outputBuckets []string, resultsBucket string, readWriteBuckets []string) string {
-	readB := dedupeBuckets(inputBuckets)
-	writeB := dedupeBuckets(append(append([]string{}, outputBuckets...), resultsBucket))
-	rwB := dedupeBuckets(readWriteBuckets)
-
-	var stmts []string
-	if len(readB) > 0 {
-		stmts = append(stmts, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject","s3:GetObjectVersion"],"Resource":[%s]}`, bucketObjectARNs(readB)))
-		stmts = append(stmts, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":[%s]}`, bucketARNs(readB)))
-	}
-	stmts = append(stmts, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:PutObject"],"Resource":[%s]}`, bucketObjectARNs(writeB)))
-	if len(rwB) > 0 {
-		stmts = append(stmts, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:GetObject","s3:GetObjectVersion","s3:PutObject","s3:DeleteObject"],"Resource":[%s]}`, bucketObjectARNs(rwB)))
-		stmts = append(stmts, fmt.Sprintf(`{"Effect":"Allow","Action":["s3:ListBucket","s3:GetBucketLocation"],"Resource":[%s]}`, bucketARNs(rwB)))
-	}
-	return `{"Version":"2012-10-17","Statement":[` + strings.Join(stmts, ",") + `]}`
-}
-
-func s3Buckets(manifests []taskproto.Manifest) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range manifests {
-		for _, ep := range []string{m.Source, m.Destination} {
-			if b := s3Bucket(ep); b != "" && !seen[b] {
-				seen[b] = true
-				out = append(out, b)
-			}
-		}
-	}
-	return out
-}
-
-func s3BucketsFromURIs(uris []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, u := range uris {
-		if b := s3Bucket(u); b != "" && !seen[b] {
-			seen[b] = true
-			out = append(out, b)
-		}
-	}
-	return out
-}
-
-func s3Bucket(uri string) string {
-	const p = "s3://"
-	if !strings.HasPrefix(uri, p) {
-		return ""
-	}
-	rest := uri[len(p):]
-	if i := strings.IndexByte(rest, '/'); i >= 0 {
-		return rest[:i]
-	}
-	return rest
-}
-
-func dedupeBuckets(buckets []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, b := range buckets {
-		if b != "" && !seen[b] {
-			seen[b] = true
-			out = append(out, b)
-		}
-	}
-	return out
-}
-
-func bucketARNs(buckets []string) string {
-	arns := make([]string, len(buckets))
-	for i, b := range buckets {
-		arns[i] = fmt.Sprintf("%q", "arn:aws:s3:::"+b)
-	}
-	return strings.Join(arns, ",")
-}
-
-func bucketObjectARNs(buckets []string) string {
-	arns := make([]string, len(buckets))
-	for i, b := range buckets {
-		arns[i] = fmt.Sprintf("%q", "arn:aws:s3:::"+b+"/*")
-	}
-	return strings.Join(arns, ",")
 }
 
 func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -530,41 +315,4 @@ func handleSpawnAppLaunch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	}
 	fmt.Fprintf(&sb, "TTL:       %s\n", ttl)
 	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
-}
-
-// wrapperIdentity returns the two per-launch values taskproto.GenerateWrapper
-// needs beyond the spec: whether the sized instance is GPU-capable, and a fresh
-// run identity for this attempt.
-//
-// It exists as a named function because both are positional arguments that
-// compile fine when wrong. `gpu=false` on a GPU box silently drops `--gpus all`,
-// and `runID=""` silently reintroduces the spawn#608 false negative — a waiter
-// mistaking a previous attempt's completion record for this one's. Neither
-// failure is visible at the call site, so each gets a test instead.
-//
-// GPU-ness is derived from the SIZED instance type, not the spec alone
-// (spawn#601/#606): a task that asked only via `families` can still be sized
-// onto a GPU box. This mirrors spawn's own derivation in cmd/task.go.
-func wrapperIdentity(spec *taskproto.TaskSpec, instanceType string) (gpu bool, runID string) {
-	return spec.Resources.GPUs > 0 || spawnclient.DetectGPUInstance(instanceType),
-		uuid.NewString()
-}
-
-// wrapperOptionsFor assembles everything taskproto's generators need for one
-// launch, so the assembly sits in a function a test can call rather than inline
-// in a handler that needs AWS to reach.
-//
-// Same reasoning that gave wrapperIdentity its own name (spawn#608/#606), one
-// layer out: spawn#764 replaced four positional arguments with a struct, and a
-// struct's omitted field is silence where a new positional argument is at least
-// a compile error. Keeping the construction here means the test can assert the
-// exact value the handler passes, instead of a lookalike built in the test.
-func wrapperOptionsFor(spec *taskproto.TaskSpec, instanceType, resultsBucket, region string) taskproto.WrapperOptions {
-	gpu, runID := wrapperIdentity(spec, instanceType)
-	return taskproto.WrapperOptions{
-		ResultsPrefix: resultsBucket,
-		Region:        region,
-		RunID:         runID,
-		GPU:           gpu,
-	}
 }

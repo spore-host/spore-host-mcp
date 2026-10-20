@@ -8,6 +8,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`spawn_status` reports how a task ended, even after its instance is gone**
+  (#63). When no instance matches, it reads the task's completion record from
+  `s3://spawn-results-<account>-<region>/tasks/<task_id>/completion.json` and
+  reports the state, exit code, why the task ended (from `retry_class` and
+  `terminal_reason`: a non-zero exit, a staging or output-delivery failure, a
+  TTL or cost-limit kill, and so on), the start and end times, the wall time
+  and the cost. The cost is labelled an estimate of compute only: the record's
+  own `cost_estimate` when it has one, otherwise the instance type's on-demand
+  rate times the wall time while EC2 still lists the instance, with a static
+  rate labelled as static, with its collection date and the reason. A
+  terminated or running task instance gets the same task section. A new
+  optional `results_prefix` argument finds the record of a task launched with a
+  TaskSpec `results_prefix`, as `spawn task status --results-prefix` does. Only
+  when there is neither an instance nor a record does it answer
+  `no instance or task record named "…"`.
+
+### Changed
+
+- **Bumped spawn v0.131.0 → v0.138.0**, for the public `pkg/tasklaunch`
+  (spawn#1255) that `spawn_task_run` now launches through.
+- **`spawn_task_run`'s dry run is spawn's own plan** (`tasklaunch.Plan` and
+  `Render`, the output of `spawn task run --dry-run`), so it now also shows the
+  root disk, `/dev/shm`, the user-data size against EC2's limit, inputs and
+  outputs, the container-floor note, and any warning or static-price label.
+- **A successful `spawn_task_run` reports the purchase option that launched
+  and the run ID**, and the follow-up `spawn task status` command carries
+  `--results-prefix` when the spec set one.
+
+### Fixed
+
+- **`spawn_task_run` falls back to On-Demand when Spot has no capacity** (#61).
+  It called `launcher.Provision` once with an empty `launcher.Options{}`, so a
+  spec with `resources.fallback: "on_demand"` failed on
+  `InsufficientInstanceCapacity` instead of retrying, and every launch went out
+  without the terminal-flush hook that writes a completion record on a TTL kill
+  (the spawn#1144 class). It now launches through spawn's `tasklaunch.Launch`,
+  which retries once On-Demand with the same, populated options.
+- **`spawn_task_run` sizes a container task to the container memory floor**
+  (#60). It sized with `spec.Resources`, bypassing spawn#1180's 2 GiB floor, so
+  a CPU-only container task could land on a 0.5 GiB box where the boot-time
+  Docker install is OOM-killed. Sizing is now spawn's, with
+  `spec.SizingRequest()`, on both the dry run and the real launch.
+- **`spawn_task_run`'s completion record reaches S3** (#64). The wrapper was
+  given a bare bucket name as its results prefix, so it wrote
+  `completion.json`, `.exitcode` and `command.log` to the instance's local disk,
+  deleted at termination, while the tool reported an S3 path nothing wrote. The
+  prefix is now spawn's resolved `EffectiveResultsPrefix`, the spec's
+  `results_prefix` is honoured, only spawn's own default bucket is ever
+  created, and the reported `Completion:` path is the one the wrapper writes.
+- **`spawn_list state=all` includes terminated instances again** (#63). It
+  mapped `all` to spawn's `""`, which since spawn#527 means non-terminated
+  only, so a task vanished from the list the moment its instance terminated.
+  It now passes spawn's `"all"`.
+- **`spawn_status` finds a recently terminated instance by name or ID** (#63).
+  It searched non-terminated instances only, so a finished task read as a typo.
+  `spawn_stop`, `spawn_terminate` and `spawn_extend` still resolve against
+  non-terminated instances only, so an old terminated instance sharing a name
+  can neither make a live one's name ambiguous nor be acted on.
+- **The handler tests no longer reach AWS.** The `spawn_*` smoke tests called
+  the real AWS API whenever the environment had credentials; every spawn tool
+  test now runs against an in-process fake.
+
 ## [0.41.0] - 2026-10-17
 
 ### Security

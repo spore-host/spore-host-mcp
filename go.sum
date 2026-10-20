@@ -414,8 +414,8 @@ github.com/spore-host/lagotto v0.64.0 h1:bnCDMX3Yp2ZcQDc/qHg89P8QJD/BFMaCkjE4EHT
 github.com/spore-host/lagotto v0.64.0/go.mod h1:jezzYfynMwGBALwYX9d7BOXvdrP4Ny7IDs2C0xhbA/8=
 github.com/spore-host/libs v0.51.1 h1:qzmllzZGYqFOqrWjBZpEcOzdeguad8i0NCVHi8mIwrQ=
 github.com/spore-host/libs v0.51.1/go.mod h1:q9UOt1DiO8Zmz4t5EWbSQV+r9FQsUOYaRkCK6TE60G4=
-github.com/spore-host/spawn v0.131.0 h1:kZTbvKGkEle5DvirtYxfrnmHDljJBEMbC9aNB48fhv0=
-github.com/spore-host/spawn v0.131.0/go.mod h1:uhs//UqxDe2rPK8oq2JxZWzyZIQ8U1BWgK35fuIZb0E=
+github.com/spore-host/spawn v0.138.0 h1:78X2fxtPEhLhQIA6qMi+DmVos0/OBMuq4pedgFMjX+I=
+github.com/spore-host/spawn v0.138.0/go.mod h1:ivpERzdToj49cSHGysvkBF9ji2K1FyTEjoXw5NX56MA=
 github.com/spore-host/truffle v0.59.0 h1:19ffVQduaSO8qc0VIgsOSgwa4uFgmfZh2rZ+9USxgg0=
 github.com/spore-host/truffle v0.59.0/go.mod h1:VPqfz8eJ8Grd9MdpLX0qln39hLFj9b06fh+yJdjt57c=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
