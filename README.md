@@ -53,8 +53,12 @@ For Cursor: `.cursor/mcp.json`
 - `truffle_quota_check` — check EC2 service quotas
 
 **spawn tools** — instance lifecycle (requires AWS credentials):
-- `spawn_list` — list instances
-- `spawn_status` — instance status, TTL, and absolute reap deadline
+- `spawn_list` — list instances (`state=all` includes terminated ones)
+- `spawn_status` — instance status, TTL, and absolute reap deadline. Finds
+  terminated instances too, and for a task reads its completion record from S3:
+  state, exit code, why it ended, start/end and wall time, and an estimated
+  compute cost — even after the instance is gone (pass `results_prefix` for a
+  task launched with one)
 - `spawn_stop` — stop a running instance
 - `spawn_terminate` — terminate an instance
 - `spawn_extend` — extend TTL
@@ -69,9 +73,11 @@ For Cursor: `.cursor/mcp.json`
 **spawn launch tools** — these create real, **billable** EC2 instances, so they
 are guardrailed: a **TTL is mandatory** (rejected if absent) and a **`dry_run`**
 flag plans without launching. Each tool's description states it is billable.
-- `spawn_task_run` — launch a task from a TaskSpec (JSON); `dry_run` sizes the
-  cheapest fitting instance and previews the plan. Placement storage (EFS/FSx/
-  attached volumes) is deferred to the CLI.
+- `spawn_task_run` — launch a task from a TaskSpec (JSON) through spawn's own
+  `pkg/tasklaunch`, the code behind `spawn task run`, so sizing (including the
+  container memory floor), the Spot-to-On-Demand fallback and the results
+  location match the CLI; `dry_run` prints the CLI's dry-run plan. Placement
+  storage (EFS/FSx/attached volumes) is deferred to the CLI.
 - `spawn_app_launch` — resolve, validate, and **plan** an app launch (application
   / desktop / web) from the catalog. The real DCV/web/session launch is
   intentionally deferred to the human-gated `spawn app launch` CLI.

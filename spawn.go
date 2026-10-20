@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -31,13 +32,16 @@ func registerSpawnTools(s *server.MCPServer) {
 	), handleSpawnList)
 
 	s.AddTool(mcp.NewTool("spawn_status",
-		mcp.WithDescription("Get detailed status of a specific spawn-managed instance by name or instance ID."),
+		mcp.WithDescription("Get detailed status of a specific spawn-managed instance or task by name, instance ID or task ID. Finds instances in every state, terminated included (EC2 lists a terminated instance for about an hour). For a task, it also reads the task's completion record from S3 and reports how the task ended — state, exit code, why it ended, start/end and wall time, and an estimated compute cost — so a finished task is reported even after its instance is gone."),
 		mcp.WithString("instance",
-			mcp.Description("Instance name (e.g. my-gpu) or EC2 instance ID (e.g. i-0abc123)"),
+			mcp.Description("Instance name (e.g. my-gpu), EC2 instance ID (e.g. i-0abc123), or a spawn_task_run task_id"),
 			mcp.Required(),
 		),
 		mcp.WithString("region",
-			mcp.Description("AWS region. Omit to search all regions."),
+			mcp.Description("AWS region. Omit to search all regions for the instance; the task record is then looked up in the configured default region."),
+		),
+		mcp.WithString("results_prefix",
+			mcp.Description("Only for a task launched with a TaskSpec results_prefix: the same s3:// prefix, so its completion record can be found. Omit for spawn's default location."),
 		),
 	), handleSpawnStatus)
 
@@ -87,19 +91,42 @@ func registerSpawnTools(s *server.MCPServer) {
 	), handleSpawnExtend)
 }
 
-func spawnClient(ctx context.Context) (*spawnclient.Client, error) {
+// spawnClient returns the spawn AWS client every spawn tool uses. A variable so
+// tests can point the real handlers at a fake AWS; nothing else assigns it.
+var spawnClient = func(ctx context.Context) (*spawnclient.Client, error) {
 	return spawnclient.NewClient(ctx)
 }
 
-// findInstance looks up an instance by name or ID across regions.
+// The two instance sets a tool resolves a name against, as spawn's
+// ListInstances stateFilter values.
+const (
+	// activeInstances is spawn's default: pending, running, stopping and
+	// stopped, never terminated. The tools that change an instance (spawn_stop,
+	// spawn_terminate, spawn_extend) resolve against this, so an old terminated
+	// instance with the same name cannot turn a valid name into an ambiguity
+	// error, or be acted on.
+	activeInstances = ""
+	// everyInstance includes shutting-down and terminated (spawn#527). Only
+	// read-only tools use it: spawn_status, so a task that has just finished
+	// still resolves, and spawn_list state=all.
+	everyInstance = "all"
+)
+
+// errInstanceNotFound is what findInstance returns, wrapped, when nothing
+// matches, so spawn_status can tell "not found" from an ambiguity or an AWS
+// error and fall back to the task's completion record.
+var errInstanceNotFound = errors.New("not found")
+
+// findInstance looks up an instance by name or ID across regions, among the
+// instances in states (activeInstances or everyInstance).
 //
 // An exact instance-ID match is unique and returned immediately. For a name
 // match it collects ALL matches and refuses to guess when more than one
 // instance shares the name (case-insensitive) — returning an ambiguity error
 // instead of silently acting on an arbitrary one. This matters most for the
 // destructive tools: an ambiguous name must never terminate the wrong box (#12).
-func findInstance(ctx context.Context, client *spawnclient.Client, nameOrID, region string) (*spawnclient.InstanceInfo, error) {
-	instances, err := client.ListInstances(ctx, region, "")
+func findInstance(ctx context.Context, client *spawnclient.Client, nameOrID, region, states string) (*spawnclient.InstanceInfo, error) {
+	instances, err := client.ListInstances(ctx, region, states)
 	if err != nil {
 		return nil, fmt.Errorf("list instances: %w", err)
 	}
@@ -126,7 +153,7 @@ func selectInstance(instances []spawnclient.InstanceInfo, nameOrID string) (*spa
 
 	switch len(nameMatches) {
 	case 0:
-		return nil, fmt.Errorf("instance %q not found", nameOrID)
+		return nil, fmt.Errorf("instance %q %w", nameOrID, errInstanceNotFound)
 	case 1:
 		return nameMatches[0], nil
 	default:
@@ -147,14 +174,15 @@ func handleSpawnList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		state = "running"
 	}
 
-	// Map the MCP "state" arg onto spawn's ListInstances stateFilter. spawn treats
-	// an empty filter as "all non-terminated" — so "all" must become "", not the
-	// literal string "all" (which is not a valid EC2 instance-state-name and would
-	// match nothing, hiding the still-EBS-billing stopped instances). (#12)
+	// Map the MCP "state" arg onto spawn's ListInstances stateFilter. "all" is
+	// spawn's "all": every state, shutting-down and terminated included. spawn's
+	// "" is NOT all — since spawn#527 it means non-terminated only, so mapping
+	// "all" to "" (as this did until #63) made a finished task vanish from
+	// state=all the moment its instance terminated.
 	var stateFilter string
 	switch state {
 	case "all":
-		stateFilter = ""
+		stateFilter = everyInstance
 	case "running", "stopped":
 		stateFilter = state
 	default:
@@ -208,13 +236,24 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	args := req.GetArguments()
 	nameOrID, _ := args["instance"].(string)
 	region, _ := args["region"].(string)
+	resultsPrefix, _ := args["results_prefix"].(string)
+	if strings.TrimSpace(nameOrID) == "" {
+		return mcp.NewToolResultError("instance is required (a name, instance ID or task ID)"), nil
+	}
 
 	client, err := spawnClient(ctx)
 	if err != nil {
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
 
-	inst, err := findInstance(ctx, client, nameOrID, region)
+	// Every state, so a task whose instance has just terminated still resolves
+	// (#63). Read-only, so the ambiguity this can add is only reported.
+	inst, err := findInstance(ctx, client, nameOrID, region, everyInstance)
+	if errors.Is(err, errInstanceNotFound) {
+		// No instance: the task may have finished and its instance aged out of
+		// EC2. Its completion record outlives it.
+		return taskRecordStatus(ctx, client, nameOrID, region, resultsPrefix)
+	}
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -270,6 +309,16 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	if dns, ok := inst.Tags["spawn:dns-name"]; ok && dns != "" {
 		fmt.Fprintf(&sb, "DNS:      %s\n", dns)
 	}
+	if inst.StateReason != "" && isTerminalState(inst.State) {
+		fmt.Fprintf(&sb, "Reason:   %s\n", inst.StateReason)
+	}
+
+	// A task instance: report its completion record too, which is how the task
+	// ended rather than how the instance did.
+	if taskID := inst.Tags["spawn:task-id"]; taskID != "" {
+		sb.WriteString("\n")
+		appendTaskRecord(ctx, &sb, client, taskID, inst.Region, resultsPrefix, inst)
+	}
 
 	return mcp.NewToolResultText(sb.String()), nil
 }
@@ -285,7 +334,7 @@ func handleSpawnStop(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
 
-	inst, err := findInstance(ctx, client, nameOrID, region)
+	inst, err := findInstance(ctx, client, nameOrID, region, activeInstances)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -317,7 +366,7 @@ func handleSpawnTerminate(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 
 	// findInstance refuses ambiguous names, so we never terminate an arbitrary
 	// instance that happens to share a name (#12).
-	inst, err := findInstance(ctx, client, nameOrID, region)
+	inst, err := findInstance(ctx, client, nameOrID, region, activeInstances)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -359,7 +408,7 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
 
-	inst, err := findInstance(ctx, client, nameOrID, region)
+	inst, err := findInstance(ctx, client, nameOrID, region, activeInstances)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
