@@ -6,7 +6,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
 	github.com/google/uuid v1.6.0
-	github.com/mark3labs/mcp-go v1.1.1
+	github.com/mark3labs/mcp-go v1.2.1
 	github.com/spore-host/lagotto v0.64.0
 	github.com/spore-host/libs v0.51.2
 	github.com/spore-host/spawn v0.140.0
