@@ -48,3 +48,30 @@ func TestFindQueryNotes(t *testing.T) {
 		t.Errorf("notes for a fully recognised query = %q, want none", got)
 	}
 }
+
+// truffle_find must accept an exact instance type (truffle#263). Before truffle
+// v0.62.0 the library's ParseQuery refused "r8g.2xlarge" as an unknown term,
+// although the truffle CLI found it, because the CLI's pattern pre-check lived
+// in cmd/ rather than the library this tool calls.
+func TestTruffleFindAcceptsAnExactInstanceType(t *testing.T) {
+	for _, q := range []string{"r8g.2xlarge", "u-6tb1.112xlarge", "g5.*"} {
+		pq, err := find.ParseQuery(q)
+		if err != nil {
+			t.Fatalf("ParseQuery(%q): %v", q, err)
+		}
+		c, err := pq.BuildCriteria(true)
+		if err != nil {
+			t.Fatalf("BuildCriteria(%q): %v", q, err)
+		}
+		if c.InstanceTypePattern == nil {
+			t.Fatalf("ParseQuery(%q) built no instance-type pattern", q)
+		}
+		want := strings.TrimSuffix(q, "*") + "large"
+		if q != "g5.*" {
+			want = q
+		}
+		if !c.InstanceTypePattern.MatchString(want) {
+			t.Errorf("pattern %q for query %q does not match %q", c.InstanceTypePattern, q, want)
+		}
+	}
+}
