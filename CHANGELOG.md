@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`spawn_task_run` launches into a named subnet** (spawn#1267). Built against
+  spawn v0.140.0, so a TaskSpec's `placement.subnet_id` reaches the launch, and
+  the task can run in a region with no default VPC, which Control Tower and
+  Landing Zone Accelerator accounts usually lack. A spec without one in such a
+  region now fails at the plan, `dry_run` included, with a list of subnets to
+  use, instead of at RunInstances. The dry run shows a `Network:` line. The
+  `spec` argument's description mentions the field.
+
 ## [0.42.0] - 2026-10-20
 
 ### Security

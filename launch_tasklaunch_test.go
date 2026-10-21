@@ -285,3 +285,24 @@ func TestTaskLaunchGoesThroughTasklaunch(t *testing.T) {
 		t.Fatal("parsed no non-test Go files; the discovery is broken, not the package clean")
 	}
 }
+
+// TestTaskRunLaunchesIntoTheSpecsSubnet is spawn#1267 at this server's
+// boundary: placement.subnet_id in the spec the tool receives reaches the
+// LaunchConfig the instance is launched with, so a task can run in a region
+// with no default VPC. Before spawn v0.140.0 the TaskSpec had no such field.
+func TestTaskRunLaunchesIntoTheSpecsSubnet(t *testing.T) {
+	prov := &recordingProvisioner{}
+	withTaskDeps(t, prov)
+
+	runTaskTool(t, `{"task_id":"kiro-subnet","command":["run.sh"],
+		"resources":{"instance_type":"t4g.small"},
+		"placement":{"subnet_id":"subnet-0aaa1111bbbb2222c"},
+		"lifecycle":{"ttl":"30m","on_complete":"terminate"}}`, false)
+
+	if len(prov.configs) != 1 {
+		t.Fatalf("Provision was called %d time(s), want 1", len(prov.configs))
+	}
+	if got := prov.configs[0].SubnetID; got != "subnet-0aaa1111bbbb2222c" {
+		t.Errorf("launched with SubnetID %q, want the spec's placement.subnet_id", got)
+	}
+}

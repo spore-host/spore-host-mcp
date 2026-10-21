@@ -25,7 +25,7 @@ func registerLaunchTools(s *server.MCPServer) {
 	s.AddTool(mcp.NewTool("spawn_task_run",
 		mcp.WithDescription("Launch a spawn TASK from a TaskSpec (the workflow-adapter contract). ⚠️ Creates a real, BILLABLE EC2 instance: it sizes the cheapest instance type that fits the resource request, launches an ephemeral instance that stages inputs from S3, runs the command, stages outputs back, and self-terminates on completion / TTL. The TaskSpec MUST include lifecycle.ttl (a death clock) or the call is rejected. Set dry_run=true to size and preview the plan WITHOUT launching (no AWS launch, no cost)."),
 		mcp.WithString("spec",
-			mcp.Description("The TaskSpec as a JSON object (string). Required fields: task_id, command (argv array), resources (cpu/memory_gib/gpus/…), and lifecycle.ttl (e.g. \"4h\"). See spawn's docs/workflow-adapter-protocol-rfc.md."),
+			mcp.Description("The TaskSpec as a JSON object (string). Required fields: task_id, command (argv array), resources (cpu/memory_gib/gpus/…), and lifecycle.ttl (e.g. \"4h\"). In a region with no default VPC, set placement.subnet_id to a subnet- id; without it the plan fails and lists subnets to use. See spawn's docs/workflow-adapter-protocol-rfc.md."),
 			mcp.Required(),
 		),
 		mcp.WithString("region",
