@@ -25,11 +25,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   TaskSpec `results_prefix`, as `spawn task status --results-prefix` does. Only
   when there is neither an instance nor a record does it answer
   `no instance or task record named "…"`.
+- **`spawn_status` prices a finished task whose instance EC2 no longer lists**
+  (spawn#1260). A record written by spawn v0.139.0 or later names the
+  instance type and purchase option, so the cost is now that type's rate times
+  the wall time instead of "not derivable": the Spot rate for a Spot task (the
+  highest current Spot price across the region's AZs, labelled as today's
+  price, since the record names no AZ), the on-demand rate otherwise, with a
+  static rate labelled as static with its collection date and the reason. When
+  no Spot rate is found it falls back to on-demand and says that overstates it.
+  It stays labelled an estimate of compute only. A record from an older spawn
+  has neither field and is reported as before: its `cost_estimate`, else not
+  derivable.
 
 ### Changed
 
-- **Bumped spawn v0.131.0 → v0.138.0**, for the public `pkg/tasklaunch`
-  (spawn#1255) that `spawn_task_run` now launches through.
+- **Bumped spawn v0.131.0 → v0.139.0**, for the public `pkg/tasklaunch`
+  (spawn#1255) that `spawn_task_run` now launches through, and for its shared
+  completion-record reader and the record's `instance_type` and `purchase`
+  fields (spawn#1260).
+- **`spawn_status` reads completion records through spawn's one reader,
+  `tasklaunch.ReadCompletion`** (spawn#1260), in place of this server's own
+  copy of the resolve-prefix, build-key, fetch and parse chain, so the key it
+  reads cannot drift from the one the wrapper writes (the spawn#715 class). A
+  missing record is reported as before, with the location looked at.
 - **`spawn_task_run`'s dry run is spawn's own plan** (`tasklaunch.Plan` and
   `Render`, the output of `spawn task run --dry-run`), so it now also shows the
   root disk, `/dev/shm`, the user-data size against EC2's limit, inputs and

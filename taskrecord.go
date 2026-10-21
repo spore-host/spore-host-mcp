@@ -32,12 +32,14 @@ func taskRecordStatus(ctx context.Context, client *spawnclient.Client, taskID, r
 		return mcp.NewToolResultError(fmt.Sprintf("no instance or task record named %q: no instance in %s, including terminated ones, and no region to look for a task record in (pass region)", taskID, scope)), nil
 	}
 
-	rec, uri, err := fetchTaskRecord(ctx, client, taskID, recordRegion, resultsPrefix)
+	// spawn's one reader of completion records (spawn#1260): the key it
+	// builds cannot drift from the one the wrapper writes.
+	rec, uri, err := tasklaunch.ReadCompletion(ctx, client, taskID, resultsPrefix, recordRegion)
+	if errors.Is(err, tasklaunch.ErrNoCompletionRecord) {
+		return mcp.NewToolResultError(fmt.Sprintf("no instance or task record named %q: no instance in %s, including terminated ones, and no completion record at %s", taskID, scope, uri)), nil
+	}
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("no instance named %q in %s, and its task record could not be read: %v", taskID, scope, err)), nil
-	}
-	if rec == nil {
-		return mcp.NewToolResultError(fmt.Sprintf("no instance or task record named %q: no instance in %s, including terminated ones, and no completion record at %s", taskID, scope, uri)), nil
 	}
 
 	var sb strings.Builder
@@ -49,12 +51,12 @@ func taskRecordStatus(ctx context.Context, client *spawnclient.Client, taskID, r
 // appendTaskRecord adds the task section to spawn_status for an instance that
 // carries a spawn:task-id tag.
 func appendTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, taskID, region, resultsPrefix string, inst *spawnclient.InstanceInfo) {
-	rec, uri, err := fetchTaskRecord(ctx, client, taskID, region, resultsPrefix)
+	rec, uri, err := tasklaunch.ReadCompletion(ctx, client, taskID, resultsPrefix, region)
 	switch {
-	case err != nil:
-		fmt.Fprintf(sb, "Task:     %s — its record could not be read: %v\n", taskID, err)
-	case rec != nil:
+	case err == nil:
 		renderTaskRecord(ctx, sb, client, rec, uri, region, inst)
+	case !errors.Is(err, tasklaunch.ErrNoCompletionRecord):
+		fmt.Fprintf(sb, "Task:     %s — its record could not be read: %v\n", taskID, err)
 	case isTerminalState(inst.State):
 		fmt.Fprintf(sb, "Task:     %s — the instance ended without a completion record at %s\n", taskID, uri)
 		sb.WriteString("          (it was stopped or killed before the wrapper or the terminal-flush hook could write one)\n")
@@ -63,42 +65,10 @@ func appendTaskRecord(ctx context.Context, sb *strings.Builder, client *spawncli
 	}
 }
 
-// fetchTaskRecord reads a task's completion record. The location is spawn's
-// own resolution, EffectiveResultsPrefix, so it is where the launch told the
-// wrapper to write: s3://spawn-results-<account>-<region>/tasks/<id> unless the
-// spec named a results_prefix, which the caller must then pass here too, as
-// with `spawn task status --results-prefix`. A missing record is (nil, uri,
-// nil); uri is always the completion record's location when it could be
-// resolved.
-func fetchTaskRecord(ctx context.Context, client *spawnclient.Client, taskID, region, resultsPrefix string) (*taskproto.CompletionRecord, string, error) {
-	account, err := client.GetAccountID(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("resolve account id: %w", err)
-	}
-	prefix := taskproto.EffectiveResultsPrefix(&taskproto.TaskSpec{TaskID: taskID, ResultsPrefix: resultsPrefix}, account, region)
-	bucket, keyPrefix, ok := taskproto.SplitS3URI(prefix)
-	if !ok {
-		return nil, "", fmt.Errorf("results_prefix %q is not an s3://bucket/prefix URI", resultsPrefix)
-	}
-	key := tasklaunch.CompletionKey(keyPrefix)
-	uri := "s3://" + bucket + "/" + key
-	data, err := client.GetS3Object(ctx, region, bucket, key)
-	if errors.Is(err, spawnclient.ErrS3NoSuchKey) {
-		return nil, uri, nil
-	}
-	if err != nil {
-		return nil, uri, err
-	}
-	rec, err := taskproto.ParseCompletionRecord(data)
-	if err != nil {
-		return nil, uri, err
-	}
-	return rec, uri, nil
-}
-
 // renderTaskRecord writes how a task ended, from its completion record. inst
-// is the task's instance when EC2 still lists it, else nil; it is what makes a
-// cost derivable when the record carries none.
+// is the task's instance when EC2 still lists it, else nil; it, or the
+// record's own instance_type, is what makes a cost derivable when the record
+// carries none.
 func renderTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, rec *taskproto.CompletionRecord, uri, region string, inst *spawnclient.InstanceInfo) {
 	fmt.Fprintf(sb, "Task:     %s\n", rec.TaskID)
 	fmt.Fprintf(sb, "State:    %s\n", rec.State)
@@ -181,6 +151,12 @@ func recordWallTime(rec *taskproto.CompletionRecord) (time.Duration, bool) {
 
 // taskCost is the cost line. Every figure is labelled an estimate and compute
 // only: none of them includes EBS, S3 requests or data transfer.
+//
+// The instance type comes from EC2 while it still lists the instance, else
+// from the record's instance_type and purchase, which spawn's wrapper writes
+// from IMDS (spawn#1260) so a record stays priceable after EC2 forgets the
+// instance. A record from an older wrapper carries neither, and without an
+// instance it is not derivable.
 func taskCost(ctx context.Context, client *spawnclient.Client, rec *taskproto.CompletionRecord, region string, inst *spawnclient.InstanceInfo, wall time.Duration, wallOK bool) string {
 	const only = "estimate, compute only (excludes EBS, S3 and data transfer)"
 	if rec.CostEstimate > 0 {
@@ -189,19 +165,65 @@ func taskCost(ctx context.Context, client *spawnclient.Client, rec *taskproto.Co
 	if !wallOK {
 		return "not derivable: the record carries no cost_estimate and no usable start/end times"
 	}
-	if inst == nil || inst.InstanceType == "" {
+	if inst != nil && inst.InstanceType != "" {
+		return onDemandCost(ctx, client, region, inst.InstanceType, wall, only, inst.SpotInstance)
+	}
+	if rec.InstanceType == "" {
 		return "not derivable: the record carries no cost_estimate, and EC2 no longer lists the instance, so its type is unknown"
 	}
-	rate, source, err := onDemandRate(ctx, client, region, inst.InstanceType)
+	switch rec.Purchase {
+	case taskproto.PurchaseSpot:
+		rate, source, err := spotRate(ctx, client, region, rec.InstanceType)
+		if err != nil {
+			line := onDemandCost(ctx, client, region, rec.InstanceType, wall, only, true)
+			return line + fmt.Sprintf(" (no Spot rate: %v)", err)
+		}
+		return fmt.Sprintf("~$%.4f — %s: %s Spot $%.4f/hr (%s) × wall time %s; type and purchase from the task record",
+			rate*wall.Hours(), only, rec.InstanceType, rate, source, wall.Round(time.Second))
+	case taskproto.PurchaseOnDemand:
+		return onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false) + "; type and purchase from the task record"
+	}
+	return onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false) +
+		"; type from the task record, which names no purchase option, so if it ran as Spot this overstates it"
+}
+
+// onDemandCost prices wall time at instanceType's on-demand rate. spot says
+// the instance ran as Spot, which the line then says the rate overstates.
+func onDemandCost(ctx context.Context, client *spawnclient.Client, region, instanceType string, wall time.Duration, only string, spot bool) string {
+	rate, source, err := onDemandRate(ctx, client, region, instanceType)
 	if err != nil {
-		return fmt.Sprintf("not derivable: no on-demand rate for %s in %s (%v)", inst.InstanceType, region, err)
+		return fmt.Sprintf("not derivable: no on-demand rate for %s in %s (%v)", instanceType, region, err)
 	}
 	line := fmt.Sprintf("~$%.4f — %s: %s on-demand $%.4f/hr (%s) × wall time %s",
-		rate*wall.Hours(), only, inst.InstanceType, rate, source, wall.Round(time.Second))
-	if inst.SpotInstance {
+		rate*wall.Hours(), only, instanceType, rate, source, wall.Round(time.Second))
+	if spot {
 		line += "; it ran as Spot, so the on-demand rate overstates it"
 	}
 	return line
+}
+
+// spotRate is the hourly Spot rate for an instance type in a region, and where
+// it came from. The record names no AZ and Spot prices move, so it is the
+// highest current price across the region's AZs, labelled as such: an upper
+// estimate of what the task paid. There is no static Spot table to fall back
+// to; on error the caller prices at on-demand and says so. A variable so tests
+// price without AWS.
+var spotRate = func(ctx context.Context, client *spawnclient.Client, region, instanceType string) (float64, string, error) {
+	prices, err := truffleaws.NewClientFromConfig(client.Config()).GetSpotPricing(ctx,
+		[]truffleaws.InstanceTypeResult{{InstanceType: instanceType, Region: region}}, truffleaws.SpotOptions{})
+	if err != nil {
+		return 0, "", err
+	}
+	var high float64
+	for _, p := range prices {
+		if p.InstanceType == instanceType && p.SpotPrice > high {
+			high = p.SpotPrice
+		}
+	}
+	if high <= 0 {
+		return 0, "", fmt.Errorf("no Spot price history for %s in %s", instanceType, region)
+	}
+	return high, "live, the highest current Spot price across the region's AZs: the record names no AZ, and this is today's price, not the run's", nil
 }
 
 // onDemandRate is the hourly on-demand rate for an instance type, and where it
