@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.42.0] - 2026-10-20
 
+### Security
+
+- **Built with Go 1.26.10** for GO-2026-6809 (disclosed 2026-10-21), which
+  makes `crypto/x509` distrust compromised intermediate certificates. This
+  server reaches `x509.Certificate.Verify` through `server.ServeStdio`, so it
+  was reported as called. The CI Go pin moves 1.26.9 → 1.26.10 in all three
+  workflows.
+
 ### Added
 
 - **`spawn_status` reports how a task ended, even after its instance is gone**
