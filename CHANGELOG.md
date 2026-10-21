@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-10-20
+
 ### Added
 
 - **`spawn_status` reports how a task ended, even after its instance is gone**
@@ -443,7 +445,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.3...v0.40.0
 [0.39.3]: https://github.com/spore-host/spore-host-mcp/compare/v0.39.2...v0.39.3
