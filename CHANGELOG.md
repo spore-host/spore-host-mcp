@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`truffle_find` accepts an exact instance type** (truffle#263). `{"query": "r8g.2xlarge"}` used to fail with "unknown term" although the truffle CLI found it; truffle v0.62.0 moved the CLI's pattern handling into the library this tool calls. The bump also brings EFA support read from EC2 (truffle#253) and libs v0.51.2.
 - **`spawn_task_run` falls back to On-Demand when Spot has no capacity** (#61).
   It called `launcher.Provision` once with an empty `launcher.Options{}`, so a
   spec with `resources.fallback: "on_demand"` failed on
