@@ -9,7 +9,7 @@ require (
 	github.com/mark3labs/mcp-go v1.1.1
 	github.com/spore-host/lagotto v0.64.0
 	github.com/spore-host/libs v0.51.2
-	github.com/spore-host/spawn v0.138.0
+	github.com/spore-host/spawn v0.139.0
 	github.com/spore-host/truffle v0.62.0
 	gopkg.in/yaml.v3 v3.0.1
 )
