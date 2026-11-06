@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **`golang.org/x/net` v0.60.0 → v0.62.0** for CVE-2026-78661 (HIGH,
+  GO-2026-6860 / GO-2026-6866) in `golang.org/x/net/html`: quadratic-time text
+  node coalescing and missing ancestor-namespace checks when rendering raw text.
+  Indirect here; `govulncheck` reports it as required-but-not-called, so this
+  closes the Trivy finding rather than a reachable path. `x/sys`, `x/text` and
+  the other `golang.org/x` modules move to the versions x/net v0.62.0 requires.
+
 ## [0.43.0] - 2026-10-20
 
 ### Added
