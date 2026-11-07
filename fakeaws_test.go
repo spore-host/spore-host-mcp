@@ -216,12 +216,26 @@ func contains(xs []string, x string) bool {
 	return false
 }
 
-// TestMain points every spawn tool at an empty fakeAWS unless a test installs
-// its own, so no test in this package can reach AWS through spawnClient — the
-// handler smoke tests used to call real AWS when the environment had
-// credentials.
+// TestMain makes the package hermetic (#79). It points every tool that goes
+// through the spawnClient seam (the spawn tools and, since #79, the lagotto
+// tools) at an empty fakeAWS unless a test installs its own, so the handler
+// smoke tests that used to call real AWS when the environment had credentials
+// cannot. And it installs the hermetic environment (hermetic_test.go), so a
+// client built any other way reaches a loopback recorder that fails the binary,
+// not a real account.
 func TestMain(m *testing.M) {
+	rec, err := installHermeticEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "hermetic: %v\n", err)
+		os.Exit(2)
+	}
+	hermeticGuard = rec
 	empty := &fakeAWS{account: "123456789012", objects: map[string]string{}}
 	spawnClient = func(context.Context) (*spawnclient.Client, error) { return empty.client(), nil }
-	os.Exit(m.Run())
+	code := m.Run()
+	if rec.report(os.Stderr) {
+		code = 1
+	}
+	rec.Close()
+	os.Exit(code)
 }

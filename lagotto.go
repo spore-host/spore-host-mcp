@@ -12,7 +12,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/spore-host/lagotto/pkg/watcher"
-	spawnclient "github.com/spore-host/spawn/pkg/aws"
 )
 
 // Default lagotto DynamoDB table names — the same defaults the lagotto CLI uses
@@ -80,8 +79,13 @@ func registerLagottoTools(s *server.MCPServer) {
 // lagottoContext resolves an AWS config (via the same spawn client the rest of
 // the server uses, so credential resolution is identical), a lagotto Store bound
 // to the conventional tables, and the caller's ARN (watches are owner-scoped).
+//
+// It goes through the spawnClient seam rather than calling spawnclient.NewClient
+// itself (#79): the seam is what the tests replace with a fake AWS, so a lagotto
+// handler test that gets past argument validation talks to the fake, not to
+// whatever account the developer's credentials name.
 func lagottoContext(ctx context.Context) (*watcher.Store, awssdk.Config, string, error) {
-	client, err := spawnclient.NewClient(ctx)
+	client, err := spawnClient(ctx)
 	if err != nil {
 		return nil, awssdk.Config{}, "", err
 	}
