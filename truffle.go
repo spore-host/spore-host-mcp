@@ -136,12 +136,7 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	if len(results) == 0 {
-		msg := fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))
-		if pq.HasNoMatchingFamily() {
-			// e.g. "intel h100": the constraints exclude each other (truffle#229).
-			msg += "\nNo instance family satisfies all of the query's constraints together; drop one, or add \"or\" to match any of them."
-		}
-		return mcp.NewToolResultText(findQueryNotes(pq) + msg), nil
+		return findNoMatch(query, regions, pq), nil
 	}
 
 	// Cap the rendered results. A broad query ("gpu", "arm64") can match hundreds
@@ -163,7 +158,146 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		spotByType[sp.InstanceType] = sp
 	}
 
-	return mcp.NewToolResultText(findQueryNotes(pq) + renderFindResults(query, results, total, spotByType, pq)), nil
+	return withSummary(findSummary(query, results, total, spotByType),
+		findQueryNotes(pq)+renderFindResults(query, results, total, spotByType, pq)), nil
+}
+
+// findNoMatch is truffle_find's result when nothing matched. The existing
+// message is the summary line (#75); the notes on how the query was read, and
+// the hint for constraints that exclude each other, follow it.
+func findNoMatch(query string, regions []string, pq *find.ParsedQuery) *mcp.CallToolResult {
+	msg := fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))
+	hint := ""
+	if pq.HasNoMatchingFamily() {
+		// e.g. "intel h100": the constraints exclude each other (truffle#229).
+		hint = "No instance family satisfies all of the query's constraints together; drop one, or add \"or\" to match any of them."
+	}
+	return withSummary(msg, findQueryNotes(pq)+hint)
+}
+
+// findSummary is truffle_find's summary line (#75) for a search that matched.
+// One instance type (in one or more regions) gets its specs, where it is
+// offered and its prices; several get the count and the cheapest On-Demand
+// rate among those shown.
+func findSummary(query string, results []truffleaws.InstanceTypeResult, total int, spotByType map[string]truffleaws.SpotPriceResult) string {
+	if len(results) == 0 {
+		return fmt.Sprintf("No instance types found matching %q.", query)
+	}
+	single := total == len(results)
+	for _, r := range results[1:] {
+		if r.InstanceType != results[0].InstanceType {
+			single = false
+		}
+	}
+	if single {
+		r := results[0]
+		var sb strings.Builder
+		fmt.Fprintf(&sb, "%s: %d vCPU, %s GiB, %s", r.InstanceType, r.VCPUs, gib(r.MemoryMiB), r.Architecture)
+		if r.GPUs > 0 {
+			fmt.Fprintf(&sb, ", %d× %s GPU", r.GPUs, r.GPUModel)
+		}
+		var where []string
+		odPrice, odRegion := 0.0, ""
+		for _, row := range results {
+			where = append(where, regionWithAZs(row.Region, row.AvailableAZs))
+			if row.OnDemandPrice > 0 && (odPrice == 0 || row.OnDemandPrice < odPrice) {
+				odPrice, odRegion = row.OnDemandPrice, row.Region
+			}
+		}
+		fmt.Fprintf(&sb, "; offered in %s", strings.Join(where, ", "))
+		var prices []string
+		if odPrice > 0 {
+			p := fmt.Sprintf("$%.4f/hr On-Demand", odPrice)
+			if len(results) > 1 {
+				p += " in " + odRegion
+			}
+			prices = append(prices, p)
+		}
+		if sp, ok := spotByType[r.InstanceType]; ok && sp.SpotPrice > 0 {
+			prices = append(prices, fmt.Sprintf("$%.4f/hr Spot", sp.SpotPrice))
+		}
+		if len(prices) > 0 {
+			sb.WriteString("; " + strings.Join(prices, ", "))
+		}
+		return sb.String()
+	}
+
+	head := fmt.Sprintf("%d matches for %q", total, query)
+	cheapest := "cheapest On-Demand"
+	if total > len(results) {
+		head += fmt.Sprintf(" (top %d shown)", len(results))
+		cheapest = "cheapest shown On-Demand"
+	}
+	var best *truffleaws.InstanceTypeResult
+	for i := range results {
+		if p := results[i].OnDemandPrice; p > 0 && (best == nil || p < best.OnDemandPrice) {
+			best = &results[i]
+		}
+	}
+	if best == nil {
+		return head + "; no On-Demand price available"
+	}
+	return fmt.Sprintf("%s; %s: %s at $%.4f/hr in %s", head, cheapest, best.InstanceType, best.OnDemandPrice, best.Region)
+}
+
+// gib renders MiB as GiB without a trailing ".0".
+func gib(mib int64) string {
+	return strings.TrimSuffix(fmt.Sprintf("%.1f", float64(mib)/1024.0), ".0")
+}
+
+// regionWithAZs is "us-west-2 (a, b, c)": the region and the zone letters of
+// its AZs that offer the type, or the bare region when the AZs are unknown.
+func regionWithAZs(region string, azs []string) string {
+	if len(azs) == 0 {
+		return region
+	}
+	letters := make([]string, 0, len(azs))
+	for _, az := range azs {
+		letters = append(letters, strings.TrimPrefix(az, region))
+	}
+	return fmt.Sprintf("%s (%s)", region, strings.Join(letters, ", "))
+}
+
+// spotSummary is truffle_spot_prices' summary line (#75): the lowest Spot
+// price found, where, and its saving over On-Demand when known.
+func spotSummary(instanceType string, prices []truffleaws.SpotPriceResult) string {
+	if len(prices) == 0 {
+		return fmt.Sprintf("No Spot price data available for %s.", instanceType)
+	}
+	low := prices[0]
+	regions := map[string]bool{}
+	for _, p := range prices {
+		regions[p.Region] = true
+		if p.SpotPrice < low.SpotPrice {
+			low = p
+		}
+	}
+	line := fmt.Sprintf("%s Spot: lowest $%.4f/hr in %s", instanceType, low.SpotPrice, low.AvailabilityZone)
+	if low.OnDemandPrice > 0 {
+		line += fmt.Sprintf(" (%.0f%% below On-Demand $%.4f/hr)", low.SavingsPercent, low.OnDemandPrice)
+	}
+	return line + fmt.Sprintf("; %d price(s) across %d region(s)", len(prices), len(regions))
+}
+
+// quotaSummary is truffle_quota_check's summary line (#75). quota and usage
+// are the family's vCPU quota and usage; known is false when the quota could
+// not be read, and then msg (CanLaunch's reason) says why.
+func quotaSummary(instanceType, quotaType, region string, vcpus, quota, usage int32, known, canLaunch, increaseCmd bool, msg string) string {
+	verdict := "❌"
+	word := "blocked"
+	if canLaunch {
+		verdict, word = "✅", "allowed"
+	}
+	line := fmt.Sprintf("%s %s %s in %s: %s — needs %d vCPU", verdict, instanceType, quotaType, region, word, vcpus)
+	if known {
+		line += fmt.Sprintf(", %d of %d available", quota-usage, quota)
+	} else if msg != "" {
+		line += "; " + msg
+	}
+	if !canLaunch && increaseCmd {
+		line += " (increase command below)"
+	}
+	return line
 }
 
 // findQueryNotes says how the query was read where that is not obvious, as
@@ -253,7 +387,7 @@ func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		}
 	}
 	if len(filtered) == 0 {
-		return mcp.NewToolResultText(fmt.Sprintf("Instance type %s not found in %s.", instanceType, strings.Join(regions, ", "))), nil
+		return withSummary(fmt.Sprintf("Instance type %s not found in %s.", instanceType, strings.Join(regions, ", ")), ""), nil
 	}
 
 	spotPrices, err := client.GetSpotPricing(ctx, filtered, truffleaws.SpotOptions{ShowSavings: true})
@@ -261,7 +395,7 @@ func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("spot price lookup failed: " + err.Error()), nil
 	}
 	if len(spotPrices) == 0 {
-		return mcp.NewToolResultText(fmt.Sprintf("No Spot price data available for %s.", instanceType)), nil
+		return withSummary(spotSummary(instanceType, nil), ""), nil
 	}
 
 	var sb strings.Builder
@@ -273,7 +407,7 @@ func handleTruffleSpotPrices(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		}
 		sb.WriteString("\n")
 	}
-	return mcp.NewToolResultText(sb.String()), nil
+	return withSummary(spotSummary(instanceType, spotPrices), sb.String()), nil
 }
 
 func handleTruffleQuotaCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -331,20 +465,27 @@ func handleTruffleQuotaCheck(ctx context.Context, req mcp.CallToolRequest) (*mcp
 	if isSpot {
 		quotaMap = info.Spot
 	}
-	if q, ok := quotaMap[family]; ok {
-		usage := info.Usage[family]
+	q, known := quotaMap[family]
+	// The usage CanLaunch weighed: Spot usage for a Spot check. This printed
+	// On-Demand usage under a Spot quota until #75.
+	usage := info.Usage[family]
+	if isSpot {
+		usage = info.SpotUsage[family]
+	}
+	if known {
 		fmt.Fprintf(&sb, "Quota: %d vCPUs  In use: %d vCPUs  Available: %d vCPUs\n", q, usage, q-usage)
 	}
 
+	cmd := ""
 	if canLaunch {
 		fmt.Fprintf(&sb, "\n✅ Launch allowed: %s", msg)
 	} else {
 		fmt.Fprintf(&sb, "\n❌ Launch blocked: %s\n", msg)
-		cmd := quotas.QuotaIncreaseCommand(region, family, vcpus*2, isSpot)
+		cmd = quotas.QuotaIncreaseCommand(region, family, vcpus*2, isSpot)
 		if cmd != "" {
 			fmt.Fprintf(&sb, "\nTo request a quota increase:\n  %s\n", cmd)
 		}
 	}
 
-	return mcp.NewToolResultText(sb.String()), nil
+	return withSummary(quotaSummary(instanceType, quotaType, region, vcpus, q, usage, known, canLaunch, cmd != "", msg), sb.String()), nil
 }

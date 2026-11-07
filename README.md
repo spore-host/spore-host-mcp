@@ -85,7 +85,12 @@ flag plans without launching. Each tool's description states it is billable.
   `pkg/tasklaunch`, the code behind `spawn task run`, so sizing (including the
   container memory floor), the Spot-to-On-Demand fallback and the results
   location match the CLI; `dry_run` prints the CLI's dry-run plan. Placement
-  storage (EFS/FSx/attached volumes) is deferred to the CLI.
+  storage (EFS/FSx/attached volumes) is deferred to the CLI. Pass the TaskSpec
+  as exactly one of `spec` (inline JSON) or `spec_file` (a path to a TaskSpec
+  JSON file, used exactly as if inlined). A relative `spec_file` is resolved
+  against the server's working directory, `~` is not expanded, and the file
+  must be a regular file of at most 1 MiB. The server reads any path its
+  process can read, the same as `spawn task run --spec`; it adds no sandbox.
 - `spawn_app_launch` — resolve, validate, and **plan** an app launch (application
   / desktop / web) from the catalog. The real DCV/web/session launch is
   intentionally deferred to the human-gated `spawn app launch` CLI.
@@ -94,6 +99,24 @@ flag plans without launching. Each tool's description states it is billable.
 that would be destroyed, and only a second call with `confirm=true` actually
 terminates it. An ambiguous name (matching more than one instance) is refused —
 use the instance ID — so the assistant can never terminate the wrong box.
+
+## Results
+
+Every successful tool result starts with a one-line summary, then a blank
+line, then the full detail. The line answers the call (allowed/blocked,
+launched/running/completed/failed, the price, the count) and carries the cost
+when there is one, so a client that shows a tool call collapsed to its first
+line still shows the outcome. It is plain text, at most 160 characters, and
+never includes an AWS account ID. For example:
+
+```
+r8g.2xlarge: 8 vCPU, 64 GiB, arm64; offered in us-west-2 (a, b, c, d); $0.4713/hr On-Demand
+✅ r8g.2xlarge On-Demand in us-west-2: allowed — needs 8 vCPU, 120 of 128 available
+Dry run: era5-2023 would launch r8g.2xlarge On-Demand in us-west-2, TTL 45m (max ~$0.35), on-complete terminate — nothing launched
+era5-2023 completed (exit 0) in 19m 50s, cost ~$0.16; instance i-0abc123 terminated
+```
+
+Error results are not summarised; their first line is the error.
 
 ## Credentials
 
