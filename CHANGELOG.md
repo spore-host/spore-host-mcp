@@ -8,6 +8,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`lagotto_watch` creates until-landed hold watches** (#92, lagotto#239).
+  `until_landed: true` (with `action: hold`) keeps hunting with no TTL, behind
+  a rolling acknowledgement deadline of 3 × `remind` (default `7d`, so 21
+  days; `remind` is 1h–30d). lagotto's own rules apply: it is refused for
+  `action: notify`, with `ttl`, and without a `notify` channel. A hold watch
+  with no TTL may reserve billable capacity at any time in the next weeks, so
+  it also needs **`confirm: true`**, the MCP equivalent of the CLI's
+  confirmation prompt / `--yes`. Without it the call is refused, nothing is
+  created or called in AWS, and the refusal states the cost exposure and the
+  acknowledgement window, so the assistant can ask the user first. The result
+  shows the acknowledgement deadline and how to move it, and warns when the
+  watch's only channels are unconfirmed email addresses.
+- **`lagotto_ack`**, the MCP equivalent of `lagotto ack` (#92). It moves an
+  until-landed watch's acknowledgement deadline a full window ahead from now.
+  For a paused watch (status `expired`, reason `unacknowledged`) it also
+  resumes it, and like the CLI it switches the hosted poller's schedule back
+  on and re-subscribes the watch's email addresses. If the schedule can't be
+  read, nothing is changed. If it can't be switched on, the watch is put back
+  to paused and the call is refused. It is owner-scoped like `lagotto_status`,
+  and it refuses a TTL watch (pointing at `lagotto extend`) and a watch that
+  is neither active nor paused.
+- **`lagotto_watch` refuses a hold watch that can never land** (#92,
+  lagotto#256), as `lagotto watch` does. If no AZ that offers the type has a
+  default subnet in a region the watch names, it is refused before anything is
+  stored, with the `aws ec2 create-default-subnet` command to fix it. A lookup
+  that can't be made is a warning, never a refusal. This needs
+  `ec2:DescribeInstanceTypeOfferings` and `ec2:DescribeSubnets`, plus
+  `ec2:DescribeRegions` for a hold watch with no `regions`.
+- **`lagotto_status` and `lagotto_list` show the pause and the acknowledgement
+  deadline** (#92). For an until-landed watch, `Expires` reads as the
+  deadline: `until landed; pauses … (in …) unless acknowledged`, with the
+  `lagotto_ack` call that moves it. A paused watch reads `PAUSED …, not
+  acknowledged in time (expired_reason: unacknowledged)`, with how to resume
+  it. The summary line says `paused (unacked)`, not `expired`. Any other
+  recorded `expired_reason` is shown too. `lagotto_status` also shows the
+  heartbeat (attempts, last error and last search error, and how long ago the
+  last poll was). `lagotto_status` and `lagotto_watch` show the watch's cost
+  exposure, priced from the static price list and labelled as such.
+
 ### Changed
 
 - **`lagotto_watch` arms a watch with lagotto's own code** (#91). Built against
@@ -35,6 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (or `"-1h"`) used to store a watch whose expiry was the moment it was
   created, so it expired on the next poll. It is now refused with "it must be
   greater than zero", as `lagotto watch --ttl 0` is, before any AWS call.
+  The refusal points at `until_landed` for a watch that should not expire.
+  `ttl` no longer advertises a schema default (an omitted `ttl` still means
+  24h), so a client that fills in defaults doesn't send `ttl` alongside
+  `until_landed`.
 
 ## [0.44.0] - 2026-11-07
 
