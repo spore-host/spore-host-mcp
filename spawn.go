@@ -208,7 +208,7 @@ func handleSpawnList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		if state == "all" {
 			stateDesc = ""
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("No %sspawn-managed instances found in %s.", stateDesc, scope)), nil
+		return withSummary(fmt.Sprintf("No %sspawn-managed instances found in %s.", stateDesc, scope), ""), nil
 	}
 
 	var sb strings.Builder
@@ -229,7 +229,39 @@ func handleSpawnList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 		}
 		sb.WriteString("\n\n")
 	}
-	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
+	return withSummary(listSummary(instances, state, region, time.Now()), sb.String()), nil
+}
+
+// listSummary is spawn_list's summary line (#75): how many, in what state and
+// where, then each instance's name with its type and age (and its state, for
+// state=all), as many as fit.
+func listSummary(instances []spawnclient.InstanceInfo, state, region string, now time.Time) string {
+	where := "in " + region
+	if region == "" {
+		where = "across all regions"
+	}
+	what := state
+	if state == "all" {
+		what = "instance(s), any state,"
+	}
+	head := fmt.Sprintf("%d %s %s: ", len(instances), what, where)
+	items := make([]string, 0, len(instances))
+	for _, inst := range instances {
+		var detail []string
+		detail = append(detail, inst.InstanceType)
+		if state == "all" {
+			detail = append(detail, inst.State)
+		}
+		if !inst.LaunchTime.IsZero() {
+			detail = append(detail, shortAge(now.Sub(inst.LaunchTime)))
+		}
+		name := inst.Name
+		if name == "" {
+			name = inst.InstanceID
+		}
+		items = append(items, fmt.Sprintf("%s (%s)", name, strings.Join(detail, ", ")))
+	}
+	return head + joinWithin(items, maxSummaryRunes-len([]rune(head)))
 }
 
 func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -315,12 +347,42 @@ func handleSpawnStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 
 	// A task instance: report its completion record too, which is how the task
 	// ended rather than how the instance did.
+	summary := instanceSummary(inst, inst.Name, "", time.Now())
 	if taskID := inst.Tags["spawn:task-id"]; taskID != "" {
 		sb.WriteString("\n")
-		appendTaskRecord(ctx, &sb, client, taskID, inst.Region, resultsPrefix, inst)
+		summary = appendTaskRecord(ctx, &sb, client, taskID, inst.Region, resultsPrefix, inst)
 	}
 
-	return mcp.NewToolResultText(sb.String()), nil
+	return withSummary(summary, sb.String()), nil
+}
+
+// instanceSummary is spawn_status's summary line (#75) for an instance with
+// no task record to report: "<name> <state>: <id> <type>, up 12m, TTL
+// deadline in 33m", then note, when there is one.
+func instanceSummary(inst *spawnclient.InstanceInfo, name, note string, now time.Time) string {
+	if name == "" {
+		name = inst.InstanceID
+	}
+	line := fmt.Sprintf("%s %s: %s %s", name, inst.State, inst.InstanceID, inst.InstanceType)
+	if inst.SpotInstance {
+		line += " Spot"
+	}
+	if !isTerminalState(inst.State) {
+		if !inst.LaunchTime.IsZero() {
+			line += ", up " + formatDuration(now.Sub(inst.LaunchTime))
+		}
+		if deadline, err := time.Parse(time.RFC3339, inst.Tags["spawn:ttl-deadline"]); err == nil {
+			if left := deadline.Sub(now); left > 0 {
+				line += ", TTL deadline in " + formatDuration(left)
+			} else {
+				line += ", TTL deadline passed"
+			}
+		}
+	}
+	if note != "" {
+		line += ", " + note
+	}
+	return line
 }
 
 func handleSpawnStop(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -350,7 +412,7 @@ func handleSpawnStop(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToo
 	if hibernate {
 		verb = "hibernated"
 	}
-	return mcp.NewToolResultText(fmt.Sprintf("✅ %s (%s) %s successfully.", inst.Name, inst.InstanceID, verb)), nil
+	return withSummary(fmt.Sprintf("✅ %s (%s) %s successfully.", inst.Name, inst.InstanceID, verb), ""), nil
 }
 
 func handleSpawnTerminate(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -375,7 +437,9 @@ func handleSpawnTerminate(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 	// spawn_terminate is directly LLM-callable and irreversible, so we never
 	// destroy an instance on the first call.
 	if !confirm {
-		return mcp.NewToolResultText(fmt.Sprintf(
+		return withSummary(fmt.Sprintf(
+			"Not terminated (preview): call again with confirm=true to terminate %s (%s, %s, %s in %s)",
+			inst.Name, inst.InstanceID, inst.InstanceType, inst.State, inst.Region), fmt.Sprintf(
 			"⚠️  This will PERMANENTLY terminate:\n"+
 				"  %s (%s)\n  type: %s  state: %s  region: %s\n\n"+
 				"This is irreversible. To proceed, call spawn_terminate again with confirm=true.",
@@ -390,7 +454,7 @@ func handleSpawnTerminate(ctx context.Context, req mcp.CallToolRequest) (*mcp.Ca
 		return mcp.NewToolResultError(fmt.Sprintf("terminate failed: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ %s (%s) terminated.", inst.Name, inst.InstanceID)), nil
+	return withSummary(fmt.Sprintf("✅ %s (%s) terminated.", inst.Name, inst.InstanceID), ""), nil
 }
 
 func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -432,8 +496,8 @@ func handleSpawnExtend(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		return mcp.NewToolResultError(fmt.Sprintf("update TTL: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("✅ %s TTL extended by %s — new deadline %s",
-		inst.Name, newTTL, newDeadline.UTC().Format("2006-01-02 15:04 UTC"))), nil
+	return withSummary(fmt.Sprintf("✅ %s TTL extended by %s — new deadline %s",
+		inst.Name, newTTL, newDeadline.UTC().Format("2006-01-02 15:04 UTC")), ""), nil
 }
 
 // computeExtendedDeadline returns the new absolute TTL deadline for an extend.

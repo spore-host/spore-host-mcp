@@ -44,32 +44,105 @@ func taskRecordStatus(ctx context.Context, client *spawnclient.Client, taskID, r
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "No instance named %q is listed by EC2 any more; its task record says it has finished.\n\n", taskID)
-	renderTaskRecord(ctx, &sb, client, rec, uri, recordRegion, nil)
-	return mcp.NewToolResultText(sb.String()), nil
+	out := renderTaskRecord(ctx, &sb, client, rec, uri, recordRegion, nil)
+	return withSummary(taskSummary(rec, out, "instance no longer listed, from task record"), sb.String()), nil
 }
 
 // appendTaskRecord adds the task section to spawn_status for an instance that
-// carries a spawn:task-id tag.
-func appendTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, taskID, region, resultsPrefix string, inst *spawnclient.InstanceInfo) {
+// carries a spawn:task-id tag, and returns spawn_status's summary line (#75).
+func appendTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, taskID, region, resultsPrefix string, inst *spawnclient.InstanceInfo) string {
 	rec, uri, err := tasklaunch.ReadCompletion(ctx, client, taskID, resultsPrefix, region)
 	switch {
 	case err == nil:
-		renderTaskRecord(ctx, sb, client, rec, uri, region, inst)
+		out := renderTaskRecord(ctx, sb, client, rec, uri, region, inst)
+		return taskSummary(rec, out, fmt.Sprintf("instance %s %s", inst.InstanceID, inst.State))
 	case !errors.Is(err, tasklaunch.ErrNoCompletionRecord):
 		fmt.Fprintf(sb, "Task:     %s — its record could not be read: %v\n", taskID, err)
+		return instanceSummary(inst, taskID, "task record unreadable", time.Now())
 	case isTerminalState(inst.State):
 		fmt.Fprintf(sb, "Task:     %s — the instance ended without a completion record at %s\n", taskID, uri)
 		sb.WriteString("          (it was stopped or killed before the wrapper or the terminal-flush hook could write one)\n")
+		return instanceSummary(inst, taskID, "ended without a completion record", time.Now())
 	default:
 		fmt.Fprintf(sb, "Task:     %s — still running: no completion record yet at %s\n", taskID, uri)
+		return instanceSummary(inst, taskID, "no completion record yet", time.Now())
 	}
+}
+
+// taskOutcome is what renderTaskRecord derived from a record that the
+// summary line needs too: the wall time and the cost.
+type taskOutcome struct {
+	wall      time.Duration
+	wallOK    bool
+	cost      float64
+	costKnown bool
+}
+
+// taskSummary is spawn_status's summary line (#75) for a task with a
+// completion record: its state, exit code, wall time and cost, why it ended
+// when that is not the plain outcome, then where the instance is.
+func taskSummary(rec *taskproto.CompletionRecord, out taskOutcome, instance string) string {
+	line := fmt.Sprintf("%s %s (exit %d)", rec.TaskID, rec.State, rec.ExitCode)
+	if out.wallOK {
+		if rec.State == taskproto.StateCompleted {
+			line += " in " + clockDuration(out.wall)
+		} else {
+			line += " after " + clockDuration(out.wall)
+		}
+	}
+	if out.costKnown {
+		line += ", cost ~" + money(out.cost)
+	} else {
+		line += ", cost unknown"
+	}
+	if why := shortEndReason(rec); why != "" {
+		line += " — ended because " + why
+	}
+	return line + "; " + instance
+}
+
+// shortEndReason is taskEndReason cut to a clause for the summary line, or ""
+// when the state and exit code already say it: a completed task, or a
+// command that exited non-zero.
+func shortEndReason(rec *taskproto.CompletionRecord) string {
+	if r := rec.TerminalReason; r != "" && r != taskproto.ExitCompleted {
+		switch r {
+		case taskproto.ExitTTLExpired:
+			return "its TTL expired"
+		case taskproto.ExitCostLimitExceeded:
+			return "its cost limit was reached"
+		case taskproto.ExitIdleTimeout:
+			return "it hit its idle timeout"
+		case taskproto.ExitSpotInterruption:
+			return "its Spot instance was interrupted"
+		case taskproto.ExitUserTerminated:
+			return "a user terminated it"
+		}
+		return "a lifecycle limit ended it (" + string(r) + ")"
+	}
+	if rec.State == taskproto.StateCompleted {
+		return ""
+	}
+	switch rec.RetryClass {
+	case taskproto.RetryStagingError:
+		return "an input failed to stage in"
+	case taskproto.RetryOutputDeliveryError:
+		return "an output failed to upload"
+	case taskproto.RetryInstanceHealth:
+		return "the instance could not run it"
+	case taskproto.RetrySpecError:
+		return "its spec could not be parsed"
+	case taskproto.RetryCapacity:
+		return "no capacity was available"
+	}
+	return ""
 }
 
 // renderTaskRecord writes how a task ended, from its completion record. inst
 // is the task's instance when EC2 still lists it, else nil; it, or the
 // record's own instance_type, is what makes a cost derivable when the record
 // carries none.
-func renderTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, rec *taskproto.CompletionRecord, uri, region string, inst *spawnclient.InstanceInfo) {
+func renderTaskRecord(ctx context.Context, sb *strings.Builder, client *spawnclient.Client, rec *taskproto.CompletionRecord, uri, region string, inst *spawnclient.InstanceInfo) taskOutcome {
 	fmt.Fprintf(sb, "Task:     %s\n", rec.TaskID)
 	fmt.Fprintf(sb, "State:    %s\n", rec.State)
 	fmt.Fprintf(sb, "Exit code: %d\n", rec.ExitCode)
@@ -87,7 +160,8 @@ func renderTaskRecord(ctx context.Context, sb *strings.Builder, client *spawncli
 	if wallOK {
 		fmt.Fprintf(sb, "Wall time: %s (the task's command window: from staging in to the record, not the instance's boot)\n", wall.Round(time.Second))
 	}
-	fmt.Fprintf(sb, "Cost:     %s\n", taskCost(ctx, client, rec, region, inst, wall, wallOK))
+	costText, cost, costKnown := taskCost(ctx, client, rec, region, inst, wall, wallOK)
+	fmt.Fprintf(sb, "Cost:     %s\n", costText)
 	if rec.RunID != "" {
 		fmt.Fprintf(sb, "Run ID:   %s\n", rec.RunID)
 	}
@@ -95,6 +169,7 @@ func renderTaskRecord(ctx context.Context, sb *strings.Builder, client *spawncli
 		fmt.Fprintf(sb, "Log:      %s\n", l)
 	}
 	fmt.Fprintf(sb, "Record:   %s\n", uri)
+	return taskOutcome{wall: wall, wallOK: wallOK, cost: cost, costKnown: costKnown}
 }
 
 // taskEndReason says why a task ended, from the record's fields: a lifecycle
@@ -157,49 +232,50 @@ func recordWallTime(rec *taskproto.CompletionRecord) (time.Duration, bool) {
 // from IMDS (spawn#1260) so a record stays priceable after EC2 forgets the
 // instance. A record from an older wrapper carries neither, and without an
 // instance it is not derivable.
-func taskCost(ctx context.Context, client *spawnclient.Client, rec *taskproto.CompletionRecord, region string, inst *spawnclient.InstanceInfo, wall time.Duration, wallOK bool) string {
+func taskCost(ctx context.Context, client *spawnclient.Client, rec *taskproto.CompletionRecord, region string, inst *spawnclient.InstanceInfo, wall time.Duration, wallOK bool) (line string, amount float64, known bool) {
 	const only = "estimate, compute only (excludes EBS, S3 and data transfer)"
 	if rec.CostEstimate > 0 {
-		return fmt.Sprintf("~$%.4f — %s, recorded by spored on the instance", rec.CostEstimate, only)
+		return fmt.Sprintf("~$%.4f — %s, recorded by spored on the instance", rec.CostEstimate, only), rec.CostEstimate, true
 	}
 	if !wallOK {
-		return "not derivable: the record carries no cost_estimate and no usable start/end times"
+		return "not derivable: the record carries no cost_estimate and no usable start/end times", 0, false
 	}
 	if inst != nil && inst.InstanceType != "" {
 		return onDemandCost(ctx, client, region, inst.InstanceType, wall, only, inst.SpotInstance)
 	}
 	if rec.InstanceType == "" {
-		return "not derivable: the record carries no cost_estimate, and EC2 no longer lists the instance, so its type is unknown"
+		return "not derivable: the record carries no cost_estimate, and EC2 no longer lists the instance, so its type is unknown", 0, false
 	}
 	switch rec.Purchase {
 	case taskproto.PurchaseSpot:
 		rate, source, err := spotRate(ctx, client, region, rec.InstanceType)
 		if err != nil {
-			line := onDemandCost(ctx, client, region, rec.InstanceType, wall, only, true)
-			return line + fmt.Sprintf(" (no Spot rate: %v)", err)
+			line, amount, known := onDemandCost(ctx, client, region, rec.InstanceType, wall, only, true)
+			return line + fmt.Sprintf(" (no Spot rate: %v)", err), amount, known
 		}
 		return fmt.Sprintf("~$%.4f — %s: %s Spot $%.4f/hr (%s) × wall time %s; type and purchase from the task record",
-			rate*wall.Hours(), only, rec.InstanceType, rate, source, wall.Round(time.Second))
+			rate*wall.Hours(), only, rec.InstanceType, rate, source, wall.Round(time.Second)), rate * wall.Hours(), true
 	case taskproto.PurchaseOnDemand:
-		return onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false) + "; type and purchase from the task record"
+		line, amount, known := onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false)
+		return line + "; type and purchase from the task record", amount, known
 	}
-	return onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false) +
-		"; type from the task record, which names no purchase option, so if it ran as Spot this overstates it"
+	line, amount, known = onDemandCost(ctx, client, region, rec.InstanceType, wall, only, false)
+	return line + "; type from the task record, which names no purchase option, so if it ran as Spot this overstates it", amount, known
 }
 
 // onDemandCost prices wall time at instanceType's on-demand rate. spot says
 // the instance ran as Spot, which the line then says the rate overstates.
-func onDemandCost(ctx context.Context, client *spawnclient.Client, region, instanceType string, wall time.Duration, only string, spot bool) string {
+func onDemandCost(ctx context.Context, client *spawnclient.Client, region, instanceType string, wall time.Duration, only string, spot bool) (string, float64, bool) {
 	rate, source, err := onDemandRate(ctx, client, region, instanceType)
 	if err != nil {
-		return fmt.Sprintf("not derivable: no on-demand rate for %s in %s (%v)", instanceType, region, err)
+		return fmt.Sprintf("not derivable: no on-demand rate for %s in %s (%v)", instanceType, region, err), 0, false
 	}
 	line := fmt.Sprintf("~$%.4f — %s: %s on-demand $%.4f/hr (%s) × wall time %s",
 		rate*wall.Hours(), only, instanceType, rate, source, wall.Round(time.Second))
 	if spot {
 		line += "; it ran as Spot, so the on-demand rate overstates it"
 	}
-	return line
+	return line, rate * wall.Hours(), true
 }
 
 // spotRate is the hourly Spot rate for an instance type in a region, and where

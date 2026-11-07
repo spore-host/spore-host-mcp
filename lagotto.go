@@ -158,9 +158,9 @@ func handleLagottoList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 			scope = "any-state"
 		}
 		if project != "" {
-			return mcp.NewToolResultText(fmt.Sprintf("No %s watches found for project %q.", scope, project)), nil
+			return withSummary(fmt.Sprintf("No %s watches found for project %q.", scope, project), ""), nil
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("No %s watches found.", scope)), nil
+		return withSummary(fmt.Sprintf("No %s watches found.", scope), ""), nil
 	}
 
 	var sb strings.Builder
@@ -188,7 +188,72 @@ func handleLagottoList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 		}
 		fmt.Fprintf(&sb, "  Expires: %s\n\n", w.ExpiresAt.Format(time.RFC3339))
 	}
-	return mcp.NewToolResultText(strings.TrimRight(sb.String(), "\n")), nil
+	return withSummary(watchListSummary(watches, all, project), sb.String()), nil
+}
+
+// watchListSummary is lagotto_list's summary line (#75): the count, then each
+// watch's id, pattern and status, as many as fit.
+func watchListSummary(watches []watcher.Watch, all bool, project string) string {
+	head := fmt.Sprintf("%d active watch(es)", len(watches))
+	if all {
+		head = fmt.Sprintf("%d watch(es)", len(watches))
+	}
+	if project != "" {
+		head += fmt.Sprintf(" in project %q", project)
+	}
+	head += ": "
+	items := make([]string, 0, len(watches))
+	for i := range watches {
+		w := &watches[i]
+		items = append(items, fmt.Sprintf("%s %s [%s]", w.WatchID, w.InstanceTypePattern, w.Status))
+	}
+	return head + joinWithin(items, maxSummaryRunes-len([]rune(head)))
+}
+
+// watchSummary is lagotto_status's summary line (#75): the status, what it
+// watches and where, then its last match (with the price) or how many
+// matches and when it expires.
+func watchSummary(w *watcher.Watch, now time.Time) string {
+	purchase := "On-Demand"
+	if w.Spot {
+		purchase = "Spot"
+	}
+	line := fmt.Sprintf("Watch %s %s: %s %s in %s, action %s", w.WatchID, w.Status, w.InstanceTypePattern, purchase, displayRegions(w.Regions), w.Action)
+	if m := w.LastMatch; m != nil {
+		where := m.AvailabilityZone
+		if where == "" {
+			where = m.Region
+		}
+		line += fmt.Sprintf("; last match %s in %s at $%.4f/hr", m.InstanceType, where, m.Price)
+		return line
+	}
+	line += fmt.Sprintf("; %d match(es)", w.MatchCount)
+	if w.Status == watcher.StatusActive && !w.ExpiresAt.IsZero() {
+		if left := w.ExpiresAt.Sub(now); left > 0 {
+			line += ", expires in " + formatDuration(left)
+		}
+	}
+	return line
+}
+
+// createdWatchSummary is lagotto_watch's summary line (#75): the watch, what
+// it watches, and whether anything will poll it, which is the outcome that
+// decides whether the watch can ever fire.
+func createdWatchSummary(w *watcher.Watch, ttl time.Duration, pollerFound, pending bool) string {
+	purchase := "On-Demand"
+	if w.Spot {
+		purchase = "Spot"
+	}
+	line := fmt.Sprintf("✅ Created watch %s: %s %s in %s, action %s, expires in %s", w.WatchID, w.InstanceTypePattern, purchase, displayRegions(w.Regions), w.Action, formatDuration(ttl))
+	if pollerFound {
+		line += "; poller on"
+	} else {
+		line += "; no hosted poller, so nothing polls it yet"
+	}
+	if pending {
+		line += "; email confirmation pending"
+	}
+	return line
 }
 
 func dashIfEmpty(s string) string {
@@ -272,7 +337,7 @@ func handleLagottoStatus(ctx context.Context, req mcp.CallToolRequest) (*mcp.Cal
 			fmt.Fprintf(&sb, "  Instance ID: %s\n", m.InstanceID)
 		}
 	}
-	return mcp.NewToolResultText(sb.String()), nil
+	return withSummary(watchSummary(w, time.Now()), sb.String()), nil
 }
 
 // parseNotifyChannels parses "type:target" notification specs, mirroring the
@@ -474,5 +539,5 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	default:
 		fmt.Fprintf(&sb, "  Poller:  the hosted poller's schedule %s is on.\n", awssdk.ToString(pollSched.Name))
 	}
-	return mcp.NewToolResultText(sb.String()), nil
+	return withSummary(createdWatchSummary(w, ttl, pollSched != nil, pending), sb.String()), nil
 }
