@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Minimal version selection moves spawn v0.140.0 → v0.161.0, truffle
   v0.62.0 → v0.63.0 and libs v0.51.2 → v0.51.4 with it, since lagotto v0.67.0
   requires them. No tool's arguments or output change in this step.
+- **The lagotto tools build their AWS client through the same seam as the
+  spawn tools** (#79), and the test suite is hermetic: it replaces the ambient
+  AWS credentials, profile and config with fakes and fails if any test makes a
+  request that would leave the machine (ported from lagotto#214's guard). No
+  user-visible effect; credential resolution is unchanged. It means a future
+  `lagotto_watch` test cannot write a real watch with a developer's
+  credentials.
 
 ### Security
 
