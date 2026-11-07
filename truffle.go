@@ -136,15 +136,7 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	if len(results) == 0 {
-		msg := fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))
-		hint := ""
-		if pq.HasNoMatchingFamily() {
-			// e.g. "intel h100": the constraints exclude each other (truffle#229).
-			hint = "No instance family satisfies all of the query's constraints together; drop one, or add \"or\" to match any of them."
-		}
-		// No match: the existing message is the summary line (#75), and the
-		// notes on how the query was read follow it.
-		return withSummary(msg, findQueryNotes(pq)+hint), nil
+		return findNoMatch(query, regions, pq), nil
 	}
 
 	// Cap the rendered results. A broad query ("gpu", "arm64") can match hundreds
@@ -168,6 +160,19 @@ func handleTruffleFind(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 
 	return withSummary(findSummary(query, results, total, spotByType),
 		findQueryNotes(pq)+renderFindResults(query, results, total, spotByType, pq)), nil
+}
+
+// findNoMatch is truffle_find's result when nothing matched. The existing
+// message is the summary line (#75); the notes on how the query was read, and
+// the hint for constraints that exclude each other, follow it.
+func findNoMatch(query string, regions []string, pq *find.ParsedQuery) *mcp.CallToolResult {
+	msg := fmt.Sprintf("No instance types found matching %q in %s.", query, strings.Join(regions, ", "))
+	hint := ""
+	if pq.HasNoMatchingFamily() {
+		// e.g. "intel h100": the constraints exclude each other (truffle#229).
+		hint = "No instance family satisfies all of the query's constraints together; drop one, or add \"or\" to match any of them."
+	}
+	return withSummary(msg, findQueryNotes(pq)+hint)
 }
 
 // findSummary is truffle_find's summary line (#75) for a search that matched.

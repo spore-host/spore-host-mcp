@@ -191,6 +191,14 @@ func handleLagottoList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallT
 	return withSummary(watchListSummary(watches, all, project), sb.String()), nil
 }
 
+// summaryRegions is a watch's regions as a summary line words them.
+func summaryRegions(regions []string) string {
+	if len(regions) == 0 {
+		return "all enabled regions"
+	}
+	return strings.Join(regions, ", ")
+}
+
 // watchListSummary is lagotto_list's summary line (#75): the count, then each
 // watch's id, pattern and status, as many as fit.
 func watchListSummary(watches []watcher.Watch, all bool, project string) string {
@@ -218,7 +226,7 @@ func watchSummary(w *watcher.Watch, now time.Time) string {
 	if w.Spot {
 		purchase = "Spot"
 	}
-	line := fmt.Sprintf("Watch %s %s: %s %s in %s, action %s", w.WatchID, w.Status, w.InstanceTypePattern, purchase, displayRegions(w.Regions), w.Action)
+	line := fmt.Sprintf("Watch %s %s: %s %s in %s, action %s", w.WatchID, w.Status, w.InstanceTypePattern, purchase, summaryRegions(w.Regions), w.Action)
 	if m := w.LastMatch; m != nil {
 		where := m.AvailabilityZone
 		if where == "" {
@@ -244,7 +252,7 @@ func createdWatchSummary(w *watcher.Watch, ttl time.Duration, pollerFound, pendi
 	if w.Spot {
 		purchase = "Spot"
 	}
-	line := fmt.Sprintf("✅ Created watch %s: %s %s in %s, action %s, expires in %s", w.WatchID, w.InstanceTypePattern, purchase, displayRegions(w.Regions), w.Action, formatDuration(ttl))
+	line := fmt.Sprintf("✅ Created watch %s: %s %s in %s, action %s, expires in %s", w.WatchID, w.InstanceTypePattern, purchase, summaryRegions(w.Regions), w.Action, formatDuration(ttl))
 	if pollerFound {
 		line += "; poller on"
 	} else {

@@ -72,6 +72,9 @@ func summaryLine(s string) string {
 // list would pass budget runes, ending it with "+N more" for the rest. At
 // least one item is always shown.
 func joinWithin(items []string, budget int) string {
+	if all := strings.Join(items, ", "); utf8.RuneCountInString(all) <= budget {
+		return all
+	}
 	var sb strings.Builder
 	for i, it := range items {
 		sep := ""

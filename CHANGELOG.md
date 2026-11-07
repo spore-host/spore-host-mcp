@@ -8,8 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`spawn_task_run` takes `spec_file`, a path to a TaskSpec JSON file, as an
+  alternative to the inline `spec`** (#75). Exactly one of the two is
+  required; both or neither is refused with an error naming the two. The
+  file's content is used exactly as the same JSON passed inline. A relative
+  path is resolved against the server's working directory (the workspace,
+  when the client starts the server there); `~` is not expanded. The file must
+  be a regular file of at most 1 MiB, and an unreadable, oversized, empty or
+  non-regular file is refused with a message saying which. The server reads
+  any path its process can read, as `spawn task run --spec` does; there is no
+  extra sandbox. With it, a collapsed call reads
+  `spawn_task_run(spec_file: era5/era5-2023.task.json, …)` instead of the
+  whole inlined spec, and the reviewed file on disk is what launches.
+
 ### Changed
 
+- **Every tool result now leads with a one-line summary** (#75), then a blank
+  line, then the output the tool returned before, unchanged. Agent clients
+  that show a tool call collapsed to its first line (Kiro CLI, for one) now
+  show the answer: `truffle_find`'s type, specs, where it is offered and its
+  prices (or the match count and cheapest On-Demand rate); `truffle_quota_check`'s
+  `✅ … allowed` / `❌ … blocked` with the vCPUs needed and available;
+  `spawn_task_run`'s `Dry run: … would launch …` / `✅ Launched …` with the
+  type, purchase option, TTL and maximum cost; `spawn_status`'s running /
+  completed / failed with the exit code, wall time, cost and why a task was
+  cut short; `spawn_list`'s count with each instance's type and age; and
+  the same for `truffle_spot_prices`, `spawn_app_launch`,
+  `spawn_terminate`'s preview and the lagotto tools. The line is plain text
+  (no Markdown), never carries an AWS account ID, and is capped at 160
+  characters. A result whose whole answer was already one line (a stop, a
+  terminate, an extend, "no instances found") is that line alone. Error
+  results are unchanged: their first line is the error.
 - **Built against lagotto v0.67.0** (was v0.64.0), the first release with the
   per-address email subscription code (lagotto#240/#248) that the v0.44.0
   `lagotto_watch` fixes build on.
@@ -37,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `--version` were always right). `dist/` is now ignored, and a CI gate
   creates `dist/probe` and fails if git sees anything untracked.
 
+- **`truffle_quota_check spot=true` reports Spot usage** (found in #75). Its
+  `In use` and `Available` figures were the family's On-Demand usage, while
+  the allowed/blocked verdict weighed Spot usage; both now use Spot usage.
 - **`lagotto_watch` no longer arms DynamoDB to delete the watch record the
   moment the watch expires** (#77, the MCP repeat of lagotto#161). It wrote
   `ttl_timestamp = expires_at`; it now writes `watcher.RetentionTTL(expires_at)`

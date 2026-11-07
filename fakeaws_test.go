@@ -183,6 +183,9 @@ func (f *fakeAWS) ec2(form url.Values) (*http.Response, error) {
 			items.WriteString(in.xml())
 		}
 		return xmlResponse(200, `<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>fake</requestId><reservationSet>`+items.String()+`</reservationSet></DescribeInstancesResponse>`), nil
+	case "DescribeAddresses":
+		// No Elastic IPs: spawn's Terminate looks for one to release.
+		return xmlResponse(200, `<DescribeAddressesResponse xmlns="http://ec2.amazonaws.com/doc/2016-11-15/"><requestId>fake</requestId><addressesSet/></DescribeAddressesResponse>`), nil
 	case "StopInstances", "TerminateInstances", "CreateTags":
 		for _, k := range []string{"InstanceId.1", "ResourceId.1"} {
 			if id := form.Get(k); id != "" {
