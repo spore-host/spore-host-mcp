@@ -155,3 +155,160 @@ func TestLagottoWatch_TTLTimestampIsTheRetentionHorizon(t *testing.T) {
 			time.Unix(ttl, 0).UTC(), expiresAt)
 	}
 }
+
+// pollerSchedule is a deployed hosted-poller schedule in state.
+func pollerSchedule(state string) *fakeSchedule {
+	return &fakeSchedule{
+		Name:       "lagotto-capacity-poller",
+		State:      state,
+		Expression: "rate(5 minutes)",
+		TargetArn:  "arn:aws:lambda:us-west-2:123456789012:function:lagotto-capacity-poller",
+		RoleArn:    "arn:aws:iam::123456789012:role/lagotto-capacity-poller-scheduler-invoke",
+	}
+}
+
+func createNotifyWatch(t *testing.T) (string, bool) {
+	t.Helper()
+	res, err := handleLagottoWatch(context.Background(), newRequest(map[string]any{
+		"pattern": "g5.xlarge", "action": "notify", "ttl": "24h",
+	}))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	return resultText(res), res.IsError
+}
+
+// indexOf is the position of the first action with prefix, or -1.
+func indexOf(actions []string, prefix string) int {
+	for i, a := range actions {
+		if strings.HasPrefix(a, prefix) {
+			return i
+		}
+	}
+	return -1
+}
+
+// TestLagottoWatch_EnablesADisabledPollSchedule is #78: the hosted poller turns
+// its schedule off when idle, so lagotto_watch must turn it back on, after
+// storing the watch, round-tripping the schedule's fields (UpdateSchedule is a
+// full PUT), as `lagotto watch` does.
+func TestLagottoWatch_EnablesADisabledPollSchedule(t *testing.T) {
+	f := newFakeAWS(t)
+	f.schedule = pollerSchedule("DISABLED")
+	f.install(t)
+
+	text, isErr := createNotifyWatch(t)
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.scheduleUpdates) != 1 {
+		t.Fatalf("UpdateSchedule calls = %d, want 1 (actions %v)", len(f.scheduleUpdates), f.actions)
+	}
+	up := f.scheduleUpdates[0]
+	if up["State"] != "ENABLED" {
+		t.Errorf("UpdateSchedule State = %v, want ENABLED", up["State"])
+	}
+	if up["ScheduleExpression"] != "rate(5 minutes)" {
+		t.Errorf("UpdateSchedule dropped the expression: %v", up["ScheduleExpression"])
+	}
+	target, _ := up["Target"].(map[string]any)
+	if target["Arn"] != f.schedule.TargetArn || target["RoleArn"] != f.schedule.RoleArn {
+		t.Errorf("UpdateSchedule Target = %v, want the schedule's own target and role", target)
+	}
+	get, put, update := indexOf(f.actions, "scheduler:GetSchedule"), indexOf(f.actions, "dynamodb:PutItem"), indexOf(f.actions, "scheduler:UpdateSchedule")
+	if get < 0 || get >= put || put >= update {
+		t.Errorf("order = %v, want GetSchedule < PutItem < UpdateSchedule", f.actions)
+	}
+	if !strings.Contains(text, "switched the hosted poller's schedule lagotto-capacity-poller back on") {
+		t.Errorf("result does not say the schedule was enabled:\n%s", text)
+	}
+}
+
+// TestLagottoWatch_LeavesAnEnabledPollScheduleAlone: no UpdateSchedule when the
+// schedule is already on.
+func TestLagottoWatch_LeavesAnEnabledPollScheduleAlone(t *testing.T) {
+	f := newFakeAWS(t)
+	f.schedule = pollerSchedule("ENABLED")
+	f.install(t)
+
+	text, isErr := createNotifyWatch(t)
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.scheduleUpdates) != 0 {
+		t.Errorf("UpdateSchedule called on an ENABLED schedule: %v", f.scheduleUpdates)
+	}
+	if !strings.Contains(text, "schedule lagotto-capacity-poller is on") {
+		t.Errorf("result does not report the schedule:\n%s", text)
+	}
+}
+
+// TestLagottoWatch_NoHostedPollerSaysSo: with no schedule deployed the watch is
+// still stored (it is for `lagotto poll --daemon`), and the result says nothing
+// will poll it until one runs.
+func TestLagottoWatch_NoHostedPollerSaysSo(t *testing.T) {
+	f := newFakeAWS(t)
+	f.install(t)
+
+	text, isErr := createNotifyWatch(t)
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	putWatchItem(t, f)
+	for _, want := range []string{"no hosted poller", "lagotto deploy", "lagotto poll --daemon"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestLagottoWatch_UnreadablePollScheduleRefuses: an error other than
+// ResourceNotFound (AccessDenied here) means we cannot know the watch will be
+// polled, so nothing is stored and the refusal names the missing permissions.
+func TestLagottoWatch_UnreadablePollScheduleRefuses(t *testing.T) {
+	f := newFakeAWS(t)
+	f.schedGetErr = "AccessDeniedException"
+	f.install(t)
+
+	text, isErr := createNotifyWatch(t)
+	if !isErr {
+		t.Fatalf("lagotto_watch succeeded with an unreadable schedule:\n%s", text)
+	}
+	if len(f.ddbPuts) != 0 {
+		t.Errorf("stored %d item(s) after the preflight refused", len(f.ddbPuts))
+	}
+	for _, want := range []string{"scheduler:GetSchedule", "was denied", "nothing was changed", "iam:PassRole", "lagotto-capacity-poller-scheduler-invoke"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestLagottoWatch_EnableFailureRollsBack: if switching the schedule on fails,
+// the stored watch is rewritten as cancelled, so no active watch is left for
+// nothing to poll, and the call is refused.
+func TestLagottoWatch_EnableFailureRollsBack(t *testing.T) {
+	f := newFakeAWS(t)
+	f.schedule = pollerSchedule("DISABLED")
+	f.schedUpdateErr = "AccessDeniedException"
+	f.install(t)
+
+	text, isErr := createNotifyWatch(t)
+	if !isErr {
+		t.Fatalf("lagotto_watch succeeded although the schedule could not be enabled:\n%s", text)
+	}
+	if len(f.ddbPuts) != 2 {
+		t.Fatalf("PutItem calls = %d, want 2 (create, then roll back)", len(f.ddbPuts))
+	}
+	if got := f.ddbPuts[1]["status"]["S"]; got != string(watcher.StatusCancelled) {
+		t.Errorf("rollback wrote status %v, want %s", got, watcher.StatusCancelled)
+	}
+	if f.ddbPuts[0]["watch_id"]["S"] != f.ddbPuts[1]["watch_id"]["S"] {
+		t.Errorf("rollback wrote a different watch: %v vs %v", f.ddbPuts[0]["watch_id"], f.ddbPuts[1]["watch_id"])
+	}
+	for _, want := range []string{"scheduler:UpdateSchedule", "no watch was created"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal missing %q:\n%s", want, text)
+		}
+	}
+}

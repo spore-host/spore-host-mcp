@@ -43,6 +43,19 @@ type fakeAWS struct {
 	// ddbPuts holds the Item of every DynamoDB PutItem, decoded from the
 	// request's JSON (lagotto_watch, #77).
 	ddbPuts []map[string]map[string]any
+
+	// The hosted poller's EventBridge schedule (#78). nil: not deployed, so
+	// GetSchedule answers ResourceNotFound. schedGetErr / schedUpdateErr, when
+	// set, are the error code GetSchedule / UpdateSchedule answer with.
+	schedule        *fakeSchedule
+	schedGetErr     string
+	schedUpdateErr  string
+	scheduleUpdates []map[string]any
+}
+
+// fakeSchedule is the subset of GetScheduleOutput the fake serves.
+type fakeSchedule struct {
+	Name, State, Expression, TargetArn, RoleArn string
 }
 
 type fakeInstance struct {
@@ -91,6 +104,8 @@ func (f *fakeAWS) RoundTrip(req *http.Request) (*http.Response, error) {
 		if form.Get("Action") == "GetCallerIdentity" {
 			return xmlResponse(200, `<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><GetCallerIdentityResult><Arn>arn:aws:iam::`+f.account+`:user/test</Arn><UserId>AIDAFAKE</UserId><Account>`+f.account+`</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>fake</RequestId></ResponseMetadata></GetCallerIdentityResponse>`), nil
 		}
+	case strings.HasPrefix(host, "scheduler."):
+		return f.scheduler(req.Method, req.URL.Path, body)
 	case strings.HasPrefix(host, "dynamodb.") || strings.Contains(host, ".ddb."):
 		return f.dynamodb(req.Header.Get("X-Amz-Target"), body)
 	case strings.Contains(host, ".s3.") || strings.HasPrefix(host, "s3."):
@@ -183,6 +198,61 @@ func (f *fakeAWS) dynamodb(target string, body []byte) (*http.Response, error) {
 	}
 	f.fail("fakeAWS: unexpected DynamoDB operation %q", op)
 	return jsonResponse(400, `{"__type":"com.amazon.coral.validate#ValidationException","message":"fakeAWS has no answer"}`), nil
+}
+
+// scheduler answers GetSchedule and UpdateSchedule (REST-JSON) on
+// /schedules/{name}.
+func (f *fakeAWS) scheduler(method, path string, body []byte) (*http.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	name, ok := strings.CutPrefix(path, "/schedules/")
+	if !ok {
+		f.fail("fakeAWS: unexpected Scheduler request %s %s", method, path)
+		return restError(400, "ValidationException"), nil
+	}
+	switch method {
+	case http.MethodGet:
+		f.actions = append(f.actions, "scheduler:GetSchedule")
+		if f.schedGetErr != "" {
+			return restError(403, f.schedGetErr), nil
+		}
+		if f.schedule == nil || f.schedule.Name != name {
+			return restError(404, "ResourceNotFoundException"), nil
+		}
+		out, _ := json.Marshal(map[string]any{
+			"Name":               f.schedule.Name,
+			"State":              f.schedule.State,
+			"ScheduleExpression": f.schedule.Expression,
+			"FlexibleTimeWindow": map[string]any{"Mode": "OFF"},
+			"Target":             map[string]any{"Arn": f.schedule.TargetArn, "RoleArn": f.schedule.RoleArn},
+		})
+		return jsonResponse(200, string(out)), nil
+	case http.MethodPut:
+		f.actions = append(f.actions, "scheduler:UpdateSchedule")
+		if f.schedUpdateErr != "" {
+			return restError(403, f.schedUpdateErr), nil
+		}
+		var in map[string]any
+		_ = json.Unmarshal(body, &in)
+		f.scheduleUpdates = append(f.scheduleUpdates, in)
+		if st, _ := in["State"].(string); st != "" && f.schedule != nil {
+			f.schedule.State = st
+		}
+		return jsonResponse(200, `{"ScheduleArn":"arn:aws:scheduler:us-west-2:`+f.account+`:schedule/default/`+name+`"}`), nil
+	}
+	f.fail("fakeAWS: unexpected Scheduler request %s %s", method, path)
+	return restError(400, "ValidationException"), nil
+}
+
+// restError is a REST-JSON error the SDK decodes into the typed exception.
+func restError(code int, errType string) *http.Response {
+	body := `{"Message":"fakeAWS ` + errType + `"}`
+	return &http.Response{
+		StatusCode:    code,
+		Header:        http.Header{"Content-Type": {"application/json"}, "X-Amzn-Errortype": {errType}},
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: int64(len(body)),
+	}
 }
 
 func jsonResponse(code int, body string) *http.Response {

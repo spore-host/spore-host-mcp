@@ -68,7 +68,12 @@ For Cursor: `.cursor/mcp.json`
   action, wait-to-acquire / time-to-give-up); optional `project` filter
 - `lagotto_status` — full details for one watch id
 - `lagotto_watch` — create a `notify` or `hold` capacity watch (`spawn`-action
-  watches are deferred to the lagotto CLI, which parses a full launch-config)
+  watches are deferred to the lagotto CLI, which parses a full launch-config).
+  Like `lagotto watch`, it switches the hosted poller's schedule back on if the
+  poller turned it off while idle, so it needs the same permissions:
+  `scheduler:GetSchedule`, `scheduler:UpdateSchedule` and `iam:PassRole` on
+  `lagotto-capacity-poller-scheduler-invoke`, besides DynamoDB on the watch
+  tables
 
 **spawn launch tools** — these create real, **billable** EC2 instances, so they
 are guardrailed: a **TTL is mandatory** (rejected if absent) and a **`dry_run`**
