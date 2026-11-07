@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Built against lagotto v0.67.0** (was v0.64.0), the first release with the
+  per-address email subscription code (lagotto#240/#248) that the v0.44.0
+  `lagotto_watch` fixes build on.
+  Minimal version selection moves spawn v0.140.0 → v0.161.0, truffle
+  v0.62.0 → v0.63.0 and libs v0.51.2 → v0.51.4 with it, since lagotto v0.67.0
+  requires them. No tool's arguments or output change in this step.
+
 ### Security
 
 - **`golang.org/x/net` v0.60.0 → v0.62.0** for CVE-2026-78661 (HIGH,
