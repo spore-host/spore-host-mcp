@@ -4,7 +4,9 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
+	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.4
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
+	github.com/aws/smithy-go v1.28.5
 	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v1.3.0
 	github.com/spore-host/lagotto v0.67.0
@@ -28,6 +30,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.6 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/account v1.32.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.82.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.73.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.70.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.46.0 // indirect
@@ -49,7 +52,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.33.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.5 // indirect
@@ -58,7 +60,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/xray v1.36.23 // indirect
-	github.com/aws/smithy-go v1.28.5 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect

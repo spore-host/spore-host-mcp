@@ -32,6 +32,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (expiry + 90 days), as `lagotto watch` does, so an expired watch keeps its
   `status=expired` tombstone and stays visible in `lagotto_list all=true` /
   `lagotto_status` instead of vanishing as if it never existed.
+- **`lagotto_watch` switches the hosted poller back on** (#78). The hosted
+  poller turns its own EventBridge schedule off when no watches are active, and
+  `lagotto_watch` never turned it back on, so on an idle account its watch sat
+  `active` and unpolled until it expired. It now does what `lagotto watch`
+  does: it reads the schedule before storing the watch, stores it, then
+  switches a `DISABLED` schedule to `ENABLED`. If the schedule can't be read
+  (AccessDenied, say) nothing is stored. If it can't be switched on, the watch
+  is rolled back to `cancelled`. In both cases the error names the missing
+  permissions: `scheduler:GetSchedule`, `scheduler:UpdateSchedule`, and
+  `iam:PassRole` on `lagotto-capacity-poller-scheduler-invoke`, the same ones
+  `lagotto watch` needs. The result now has a `Poller:` line: the schedule was
+  switched back on, it was already on, or no hosted poller is deployed in this
+  account and region. In the last case the watch is still stored, and nothing
+  polls it until you run `lagotto deploy` or `lagotto poll --daemon`.
+  `LAGOTTO_SCHEDULE_NAME` overrides the schedule name, as in the CLI.
 
 ### Security
 

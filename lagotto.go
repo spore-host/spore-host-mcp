@@ -7,6 +7,7 @@ import (
 	"time"
 
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/scheduler"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -43,7 +44,7 @@ func registerLagottoTools(s *server.MCPServer) {
 	), handleLagottoStatus)
 
 	s.AddTool(mcp.NewTool("lagotto_watch",
-		mcp.WithDescription("Create a lagotto capacity watch: lagotto polls for the requested instance-type capacity across regions and takes an action when it's found. Supports action=notify (send a notification only — nothing billable) and action=hold (place an On-Demand Capacity Reservation to HOLD the capacity — this reserves billable EC2 capacity for as long as the reservation is held). action=spawn is not supported here (it needs a full spawn launch-config); use the lagotto CLI for that. The watch stops when it matches or its TTL elapses."),
+		mcp.WithDescription("Create a lagotto capacity watch: lagotto polls for the requested instance-type capacity across regions and takes an action when it's found. Like `lagotto watch`, it switches the hosted poller's schedule back on if the poller turned it off while idle (needs scheduler:GetSchedule, scheduler:UpdateSchedule and iam:PassRole on the scheduler-invoke role), and says so when no hosted poller is deployed in the account and region, since then nothing polls the watch until `lagotto deploy` or `lagotto poll --daemon`. Supports action=notify (send a notification only — nothing billable) and action=hold (place an On-Demand Capacity Reservation to HOLD the capacity — this reserves billable EC2 capacity for as long as the reservation is held). action=spawn is not supported here (it needs a full spawn launch-config); use the lagotto CLI for that. The watch stops when it matches or its TTL elapses."),
 		mcp.WithString("pattern",
 			mcp.Description("Instance-type pattern to watch: an exact type (g5.xlarge), a wildcard (p5.*), or a comma-separated list (g6.4xlarge,g6.2xlarge) matching ANY listed rung."),
 			mcp.Required(),
@@ -365,7 +366,7 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	store, _, caller, err := lagottoContext(ctx)
+	store, cfg, caller, err := lagottoContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
@@ -399,8 +400,27 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if _, err := store.EnsureTables(ctx); err != nil {
 		return mcp.NewToolResultError("ensure tables: " + err.Error()), nil
 	}
+
+	// Store the watch and make sure the hosted poller will poll it (#78), in
+	// `lagotto watch`'s order (see pollschedule.go): read the schedule first,
+	// refusing if it can't be read; store; then switch a DISABLED schedule on,
+	// rolling the watch back if that fails.
+	sched := scheduler.NewFromConfig(cfg)
+	armAction := "create watch " + w.WatchID
+	pollSched, err := pollSchedulePreflight(ctx, sched, armAction)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	if err := store.PutWatch(ctx, w); err != nil {
 		return mcp.NewToolResultError("create watch: " + err.Error()), nil
+	}
+	enabled, err := enablePollScheduleIfOff(ctx, sched, pollSched)
+	if err != nil {
+		// Roll back through PutWatch, the call (and dynamodb:PutItem permission)
+		// that just created it, so the rollback needs nothing the caller lacks.
+		w.Status = watcher.StatusCancelled
+		w.UpdatedAt = time.Now().UTC()
+		return mcp.NewToolResultError(pollScheduleUpdateRefusal(armAction, store.PutWatch(ctx, w), err).Error()), nil
 	}
 
 	auditLog("lagotto_watch", w.WatchID, "", "")
@@ -418,5 +438,13 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		sb.WriteString("  Note:    hold reserves billable On-Demand capacity on match.\n")
 	}
 	fmt.Fprintf(&sb, "  Expires: %s\n", w.ExpiresAt.Format(time.RFC3339))
+	switch {
+	case pollSched == nil:
+		fmt.Fprintf(&sb, "  Poller:  no hosted poller in this account and region (schedule %s not found), so nothing will poll this watch until you run `lagotto deploy` here, or `lagotto poll --daemon` somewhere that stays up.\n", pollScheduleName())
+	case enabled:
+		fmt.Fprintf(&sb, "  Poller:  switched the hosted poller's schedule %s back on (it turns itself off when no watches are active).\n", awssdk.ToString(pollSched.Name))
+	default:
+		fmt.Fprintf(&sb, "  Poller:  the hosted poller's schedule %s is on.\n", awssdk.ToString(pollSched.Name))
+	}
 	return mcp.NewToolResultText(sb.String()), nil
 }
