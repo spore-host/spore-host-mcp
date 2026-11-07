@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.339.0
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
@@ -34,7 +35,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.70.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.46.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ebs v1.34.7 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.339.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/efs v1.41.16 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.55.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/fsx v1.65.10 // indirect

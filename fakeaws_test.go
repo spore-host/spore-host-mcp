@@ -44,6 +44,12 @@ type fakeAWS struct {
 	// ddbPuts holds the Item of every DynamoDB PutItem, decoded from the
 	// request's JSON (lagotto_watch, #77).
 	ddbPuts []map[string]map[string]any
+	// ddbItems is the watch table as the fake sees it: the last item PutItem
+	// stored per watch_id, which GetItem answers with (#92). A test edits an
+	// item here to stage a paused or foreign watch. ddbUpdates holds every
+	// UpdateItem request (UpdateExpression, values), which it does not apply.
+	ddbItems   map[string]map[string]map[string]any
+	ddbUpdates []fakeUpdate
 
 	// The hosted poller's EventBridge schedule (#78). nil: not deployed, so
 	// GetSchedule answers ResourceNotFound. schedGetErr / schedUpdateErr, when
@@ -61,6 +67,13 @@ type fakeAWS struct {
 	snsSubscribeErr string
 	snsSubscribes   []url.Values
 	snsCalls        []string // "Action@region"
+}
+
+// fakeUpdate is one DynamoDB UpdateItem request.
+type fakeUpdate struct {
+	WatchID    string
+	Expression string
+	Values     map[string]map[string]any
 }
 
 // fakeSNSSub is one subscription on the fake topic.
@@ -200,16 +213,20 @@ func (f *fakeAWS) ec2(form url.Values) (*http.Response, error) {
 }
 
 // dynamodb answers the lagotto store's calls: DescribeTable (every table
-// exists and is ACTIVE, so EnsureTables creates nothing) and PutItem, whose
-// Item it records.
+// exists and is ACTIVE, so EnsureTables creates nothing), PutItem, whose Item
+// it records and stores, GetItem from what was stored, and UpdateItem, which it
+// records.
 func (f *fakeAWS) dynamodb(target string, body []byte) (*http.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	op := strings.TrimPrefix(target, "DynamoDB_20120810.")
 	f.actions = append(f.actions, "dynamodb:"+op)
 	var in struct {
-		TableName string
-		Item      map[string]map[string]any
+		TableName                 string
+		Item                      map[string]map[string]any
+		Key                       map[string]map[string]any
+		UpdateExpression          string
+		ExpressionAttributeValues map[string]map[string]any
 	}
 	_ = json.Unmarshal(body, &in)
 	switch op {
@@ -217,6 +234,24 @@ func (f *fakeAWS) dynamodb(target string, body []byte) (*http.Response, error) {
 		return jsonResponse(200, fmt.Sprintf(`{"Table":{"TableName":%q,"TableStatus":"ACTIVE"}}`, in.TableName)), nil
 	case "PutItem":
 		f.ddbPuts = append(f.ddbPuts, in.Item)
+		if id, _ := in.Item["watch_id"]["S"].(string); id != "" {
+			if f.ddbItems == nil {
+				f.ddbItems = map[string]map[string]map[string]any{}
+			}
+			f.ddbItems[id] = in.Item
+		}
+		return jsonResponse(200, `{}`), nil
+	case "GetItem":
+		id, _ := in.Key["watch_id"]["S"].(string)
+		item, ok := f.ddbItems[id]
+		if !ok {
+			return jsonResponse(200, `{}`), nil
+		}
+		out, _ := json.Marshal(map[string]any{"Item": item})
+		return jsonResponse(200, string(out)), nil
+	case "UpdateItem":
+		id, _ := in.Key["watch_id"]["S"].(string)
+		f.ddbUpdates = append(f.ddbUpdates, fakeUpdate{WatchID: id, Expression: in.UpdateExpression, Values: in.ExpressionAttributeValues})
 		return jsonResponse(200, `{}`), nil
 	}
 	f.fail("fakeAWS: unexpected DynamoDB operation %q", op)

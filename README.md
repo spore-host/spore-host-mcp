@@ -65,8 +65,11 @@ For Cursor: `.cursor/mcp.json`
 
 **lagotto tools** — capacity watches (require AWS credentials; owner-scoped):
 - `lagotto_list` — list your watches (project, owner, status, pattern, regions,
-  action, wait-to-acquire / time-to-give-up); optional `project` filter
-- `lagotto_status` — full details for one watch id
+  action, expiry or acknowledgement deadline, wait-to-acquire /
+  time-to-give-up); optional `project` filter
+- `lagotto_status` — full details for one watch id, including its cost
+  exposure, its heartbeat, and for an until-landed watch its acknowledgement
+  deadline or why it paused
 - `lagotto_watch` — create a `notify` or `hold` capacity watch (`spawn`-action
   watches are deferred to the lagotto CLI, which parses a full launch-config).
   Like `lagotto watch`, it switches the hosted poller's schedule back on if the
@@ -76,7 +79,22 @@ For Cursor: `.cursor/mcp.json`
   tables. An `email:` channel subscribes the address to the account's lagotto
   alerts topic (created by `lagotto deploy`), which needs `sns:Subscribe`,
   `sns:ListSubscriptionsByTopic` and `sns:GetSubscriptionAttributes`; the
-  address receives nothing until it clicks the confirmation link AWS emails it
+  address receives nothing until it clicks the confirmation link AWS emails it.
+  A `hold` watch is refused if it can never land: no AZ that offers the type
+  has a default subnet, as `lagotto watch` checks (needs
+  `ec2:DescribeInstanceTypeOfferings`, `ec2:DescribeSubnets` and, with no
+  `regions`, `ec2:DescribeRegions`).
+  `until_landed: true` (hold only) makes the watch hunt with no TTL until it
+  lands. It pauses itself unless acknowledged within 3 × `remind` (default
+  `7d`, so 21 days), and it needs a `notify` channel. Because it may reserve
+  billable capacity at any time in the next weeks, it also needs an explicit
+  **`confirm: true`**, the MCP equivalent of the CLI's confirmation prompt.
+  Without it the call is refused with the watch's cost exposure, and nothing
+  is created.
+- `lagotto_ack` — acknowledge an until-landed watch (like `lagotto ack`). It
+  moves the deadline a full window ahead from now, and resumes a paused watch,
+  switching the poller's schedule back on (the same scheduler permissions as
+  `lagotto_watch`) and re-subscribing its email addresses
 
 **spawn launch tools** — these create real, **billable** EC2 instances, so they
 are guardrailed: a **TTL is mandatory** (rejected if absent) and a **`dry_run`**

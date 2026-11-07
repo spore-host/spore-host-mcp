@@ -45,11 +45,7 @@ func subscribeForNewWatch(ctx context.Context, cfg awssdk.Config, callerArn stri
 	if !watcher.NeedsAlertsTopic(w) {
 		return nil, nil
 	}
-	account := ""
-	if parsed, err := arn.Parse(callerArn); err == nil {
-		account = parsed.AccountID
-	}
-	topic := arm.ResolveAlertsTopic(ctx, os.Getenv, cfg.Region, account, deploy.New(cfg))
+	topic := arm.ResolveAlertsTopic(ctx, os.Getenv, cfg.Region, accountOf(callerArn), deploy.New(cfg))
 	var subs arm.EmailSubscriber
 	if topic.ARN != "" {
 		subs = watcher.NewEmailSubscriptions(sns.NewFromConfig(cfg), topic.ARN)
@@ -59,4 +55,12 @@ func subscribeForNewWatch(ctx context.Context, cfg awssdk.Config, callerArn stri
 		err = fmt.Errorf("%w ("+snsSubscribePermissions+")", err, subs.TopicArn())
 	}
 	return warnings, err
+}
+
+// accountOf is the account ID in an ARN, or "" when it does not parse.
+func accountOf(a string) string {
+	if parsed, err := arn.Parse(a); err == nil {
+		return parsed.AccountID
+	}
+	return ""
 }
