@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -39,6 +40,9 @@ type fakeAWS struct {
 	actions       []string
 	mutated       []string // instance ids a Stop/Terminate/CreateTags named
 	s3Gets        []string // "bucket/key"
+	// ddbPuts holds the Item of every DynamoDB PutItem, decoded from the
+	// request's JSON (lagotto_watch, #77).
+	ddbPuts []map[string]map[string]any
 }
 
 type fakeInstance struct {
@@ -87,6 +91,8 @@ func (f *fakeAWS) RoundTrip(req *http.Request) (*http.Response, error) {
 		if form.Get("Action") == "GetCallerIdentity" {
 			return xmlResponse(200, `<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><GetCallerIdentityResult><Arn>arn:aws:iam::`+f.account+`:user/test</Arn><UserId>AIDAFAKE</UserId><Account>`+f.account+`</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>fake</RequestId></ResponseMetadata></GetCallerIdentityResponse>`), nil
 		}
+	case strings.HasPrefix(host, "dynamodb.") || strings.Contains(host, ".ddb."):
+		return f.dynamodb(req.Header.Get("X-Amz-Target"), body)
 	case strings.Contains(host, ".s3.") || strings.HasPrefix(host, "s3."):
 		if req.Method == http.MethodGet {
 			return f.s3Get(req)
@@ -153,6 +159,39 @@ func (f *fakeAWS) ec2(form url.Values) (*http.Response, error) {
 	}
 	f.fail("fakeAWS: unexpected EC2 action %q", action)
 	return xmlResponse(400, `<Response><Errors><Error><Code>Unexpected</Code><Message>no answer</Message></Error></Errors></Response>`), nil
+}
+
+// dynamodb answers the lagotto store's calls: DescribeTable (every table
+// exists and is ACTIVE, so EnsureTables creates nothing) and PutItem, whose
+// Item it records.
+func (f *fakeAWS) dynamodb(target string, body []byte) (*http.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	op := strings.TrimPrefix(target, "DynamoDB_20120810.")
+	f.actions = append(f.actions, "dynamodb:"+op)
+	var in struct {
+		TableName string
+		Item      map[string]map[string]any
+	}
+	_ = json.Unmarshal(body, &in)
+	switch op {
+	case "DescribeTable":
+		return jsonResponse(200, fmt.Sprintf(`{"Table":{"TableName":%q,"TableStatus":"ACTIVE"}}`, in.TableName)), nil
+	case "PutItem":
+		f.ddbPuts = append(f.ddbPuts, in.Item)
+		return jsonResponse(200, `{}`), nil
+	}
+	f.fail("fakeAWS: unexpected DynamoDB operation %q", op)
+	return jsonResponse(400, `{"__type":"com.amazon.coral.validate#ValidationException","message":"fakeAWS has no answer"}`), nil
+}
+
+func jsonResponse(code int, body string) *http.Response {
+	return &http.Response{
+		StatusCode:    code,
+		Header:        http.Header{"Content-Type": {"application/x-amz-json-1.0"}},
+		Body:          io.NopCloser(strings.NewReader(body)),
+		ContentLength: int64(len(body)),
+	}
 }
 
 func (f *fakeAWS) s3Get(req *http.Request) (*http.Response, error) {

@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lagotto_watch` test cannot write a real watch with a developer's
   credentials.
 
+### Fixed
+
+- **`lagotto_watch` no longer arms DynamoDB to delete the watch record the
+  moment the watch expires** (#77, the MCP repeat of lagotto#161). It wrote
+  `ttl_timestamp = expires_at`; it now writes `watcher.RetentionTTL(expires_at)`
+  (expiry + 90 days), as `lagotto watch` does, so an expired watch keeps its
+  `status=expired` tombstone and stays visible in `lagotto_list all=true` /
+  `lagotto_status` instead of vanishing as if it never existed.
+
 ### Security
 
 - **`golang.org/x/net` v0.60.0 → v0.62.0** for CVE-2026-78661 (HIGH,
