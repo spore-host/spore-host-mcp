@@ -22,11 +22,13 @@ import (
 // summary_test.go from values.
 func TestToolResultsLeadWithTheSummaryLine(t *testing.T) {
 	const taskSpec = `{"task_id":"era5-2023","command":["python","run.py"],"resources":{"cpu":8,"memory_gib":64},"lifecycle":{"ttl":"45m"}}`
-	paraview, ok := catalog.Lookup("paraview")
+	// desktop needs no image, so it plans from the embedded catalog alone; an
+	// image-less application such as desktopApp plans only with a user overlay.
+	desktopApp, ok := catalog.Lookup("desktop")
 	if !ok {
-		t.Fatal("paraview is not in the catalog")
+		t.Fatal("desktop is not in the catalog")
 	}
-	paraviewType := paraview.InstanceFamilies[0] + ".xlarge"
+	desktopAppType := desktopApp.InstanceFamilies[0] + ".xlarge"
 
 	// A task instance up 12m with 33m left on its TTL.
 	runningTask := func(f *fakeAWS) {
@@ -123,11 +125,11 @@ func TestToolResultsLeadWithTheSummaryLine(t *testing.T) {
 			body: "✅ Task launched: era5-2023"},
 
 		// spawn_app_launch never launches; the line says so either way
-		{name: "spawn_app_launch dry run", tool: handleSpawnAppLaunch, args: map[string]any{"app": "paraview", "ttl": "4h", "region": "us-west-2", "dry_run": true},
-			lead: "Dry run: paraview (" + string(paraview.Kind()) + ") would launch " + paraviewType + " in us-west-2, TTL 4h — nothing launched",
+		{name: "spawn_app_launch dry run", tool: handleSpawnAppLaunch, args: map[string]any{"app": "desktop", "ttl": "4h", "region": "us-west-2", "dry_run": true},
+			lead: "Dry run: desktop (" + string(desktopApp.Kind()) + ") would launch " + desktopAppType + " in us-west-2, TTL 4h — nothing launched",
 			body: "DRY RUN — nothing will be launched."},
-		{name: "spawn_app_launch plan only", tool: handleSpawnAppLaunch, args: map[string]any{"app": "paraview", "ttl": "4h", "region": "us-west-2"},
-			lead: "Plan only: paraview (" + string(paraview.Kind()) + ") on " + paraviewType + " in us-west-2, TTL 4h — not launched; launch it with the spawn app launch CLI",
+		{name: "spawn_app_launch plan only", tool: handleSpawnAppLaunch, args: map[string]any{"app": "desktop", "ttl": "4h", "region": "us-west-2"},
+			lead: "Plan only: desktop (" + string(desktopApp.Kind()) + ") on " + desktopAppType + " in us-west-2, TTL 4h — not launched; launch it with the spawn app launch CLI",
 			body: "PLAN ONLY — this MCP tool does not perform the real DCV/web launch."},
 
 		// lagotto_watch
