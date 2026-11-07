@@ -73,7 +73,10 @@ For Cursor: `.cursor/mcp.json`
   poller turned it off while idle, so it needs the same permissions:
   `scheduler:GetSchedule`, `scheduler:UpdateSchedule` and `iam:PassRole` on
   `lagotto-capacity-poller-scheduler-invoke`, besides DynamoDB on the watch
-  tables
+  tables. An `email:` channel subscribes the address to the account's lagotto
+  alerts topic (created by `lagotto deploy`), which needs `sns:Subscribe`,
+  `sns:ListSubscriptionsByTopic` and `sns:GetSubscriptionAttributes`; the
+  address receives nothing until it clicks the confirmation link AWS emails it
 
 **spawn launch tools** — these create real, **billable** EC2 instances, so they
 are guardrailed: a **TTL is mandatory** (rejected if absent) and a **`dry_run`**

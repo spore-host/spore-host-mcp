@@ -51,6 +51,22 @@ type fakeAWS struct {
 	schedGetErr     string
 	schedUpdateErr  string
 	scheduleUpdates []map[string]any
+
+	// SNS (#81). snsTopic is the one topic that exists ("" = none, so
+	// GetTopicAttributes answers NotFound). snsSubs are its subscriptions;
+	// snsSubscribeErr, when set, is the error code Subscribe answers with.
+	snsTopic        string
+	snsSubs         []fakeSNSSub
+	snsSubscribeErr string
+	snsSubscribes   []url.Values
+	snsCalls        []string // "Action@region"
+}
+
+// fakeSNSSub is one subscription on the fake topic.
+type fakeSNSSub struct {
+	endpoint     string
+	confirmed    bool
+	filterPolicy string
 }
 
 // fakeSchedule is the subset of GetScheduleOutput the fake serves.
@@ -104,6 +120,9 @@ func (f *fakeAWS) RoundTrip(req *http.Request) (*http.Response, error) {
 		if form.Get("Action") == "GetCallerIdentity" {
 			return xmlResponse(200, `<GetCallerIdentityResponse xmlns="https://sts.amazonaws.com/doc/2011-06-15/"><GetCallerIdentityResult><Arn>arn:aws:iam::`+f.account+`:user/test</Arn><UserId>AIDAFAKE</UserId><Account>`+f.account+`</Account></GetCallerIdentityResult><ResponseMetadata><RequestId>fake</RequestId></ResponseMetadata></GetCallerIdentityResponse>`), nil
 		}
+	case strings.HasPrefix(host, "sns."):
+		form, _ := url.ParseQuery(string(body))
+		return f.sns(strings.Split(host, ".")[1], form)
 	case strings.HasPrefix(host, "scheduler."):
 		return f.scheduler(req.Method, req.URL.Path, body)
 	case strings.HasPrefix(host, "dynamodb.") || strings.Contains(host, ".ddb."):
@@ -242,6 +261,76 @@ func (f *fakeAWS) scheduler(method, path string, body []byte) (*http.Response, e
 	}
 	f.fail("fakeAWS: unexpected Scheduler request %s %s", method, path)
 	return restError(400, "ValidationException"), nil
+}
+
+// sns answers the email-subscription calls (query protocol): the topic probe,
+// ListSubscriptionsByTopic, Subscribe (a new subscription starts pending), and
+// GetSubscriptionAttributes for a confirmed one.
+func (f *fakeAWS) sns(region string, form url.Values) (*http.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	action := form.Get("Action")
+	f.actions = append(f.actions, "sns:"+action)
+	f.snsCalls = append(f.snsCalls, action+"@"+region)
+	const ns = `xmlns="http://sns.amazonaws.com/doc/2010-03-31/"`
+	ok := func(result string) *http.Response {
+		return xmlResponse(200, `<`+action+`Response `+ns+`><`+action+`Result>`+result+`</`+action+`Result><ResponseMetadata><RequestId>fake</RequestId></ResponseMetadata></`+action+`Response>`)
+	}
+	snsErr := func(code int, errCode string) *http.Response {
+		return xmlResponse(code, `<ErrorResponse `+ns+`><Error><Type>Sender</Type><Code>`+errCode+`</Code><Message>fakeAWS `+errCode+`</Message></Error><RequestId>fake</RequestId></ErrorResponse>`)
+	}
+	topicArn := form.Get("TopicArn")
+	if action != "GetSubscriptionAttributes" && (f.snsTopic == "" || topicArn != f.snsTopic) {
+		return snsErr(404, "NotFound"), nil
+	}
+	subArn := func(i int) string { return fmt.Sprintf("%s:sub-%d", f.snsTopic, i) }
+	switch action {
+	case "GetTopicAttributes":
+		return ok(`<Attributes><entry><key>TopicArn</key><value>` + html.EscapeString(f.snsTopic) + `</value></entry></Attributes>`), nil
+	case "ListSubscriptionsByTopic":
+		var members strings.Builder
+		for i, sub := range f.snsSubs {
+			a := "PendingConfirmation"
+			if sub.confirmed {
+				a = subArn(i)
+			}
+			fmt.Fprintf(&members, `<member><TopicArn>%s</TopicArn><Protocol>email</Protocol><SubscriptionArn>%s</SubscriptionArn><Owner>%s</Owner><Endpoint>%s</Endpoint></member>`,
+				html.EscapeString(f.snsTopic), html.EscapeString(a), f.account, html.EscapeString(sub.endpoint))
+		}
+		return ok(`<Subscriptions>` + members.String() + `</Subscriptions>`), nil
+	case "Subscribe":
+		f.snsSubscribes = append(f.snsSubscribes, form)
+		if f.snsSubscribeErr != "" {
+			return snsErr(403, f.snsSubscribeErr), nil
+		}
+		f.snsSubs = append(f.snsSubs, fakeSNSSub{endpoint: form.Get("Endpoint")})
+		return ok(`<SubscriptionArn>pending confirmation</SubscriptionArn>`), nil
+	case "GetSubscriptionAttributes":
+		for i, sub := range f.snsSubs {
+			if sub.confirmed && subArn(i) == form.Get("SubscriptionArn") {
+				attrs := ""
+				if sub.filterPolicy != "" {
+					attrs = `<entry><key>FilterPolicy</key><value>` + html.EscapeString(sub.filterPolicy) + `</value></entry><entry><key>FilterPolicyScope</key><value>MessageAttributes</value></entry>`
+				}
+				return ok(`<Attributes>` + attrs + `</Attributes>`), nil
+			}
+		}
+		return snsErr(404, "NotFound"), nil
+	}
+	f.fail("fakeAWS: unexpected SNS action %q", action)
+	return snsErr(400, "InvalidAction"), nil
+}
+
+// snsSubscribeAttrs decodes a Subscribe request's Attributes map.
+func snsSubscribeAttrs(form url.Values) map[string]string {
+	out := map[string]string{}
+	for i := 1; ; i++ {
+		k := form.Get(fmt.Sprintf("Attributes.entry.%d.key", i))
+		if k == "" {
+			return out
+		}
+		out[k] = form.Get(fmt.Sprintf("Attributes.entry.%d.value", i))
+	}
 }
 
 // restError is a REST-JSON error the SDK decodes into the typed exception.

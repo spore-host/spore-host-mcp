@@ -72,7 +72,7 @@ func registerLagottoTools(s *server.MCPServer) {
 			mcp.DefaultNumber(0),
 		),
 		mcp.WithString("notify",
-			mcp.Description("Comma-separated notification channels for action=notify, each type:target — email:user@example.com, sns:arn:aws:sns:..., or webhook:https://..."),
+			mcp.Description("Comma-separated notification channels for action=notify, each type:target — email:user@example.com, sns:arn:aws:sns:..., or webhook:https://... An email address is subscribed to the account's lagotto alerts topic (created by `lagotto deploy`; the watch is refused if there is none) and receives nothing until it clicks the confirmation link AWS emails it."),
 		),
 	), handleLagottoWatch)
 }
@@ -290,7 +290,15 @@ func parseNotifyChannels(raw string) ([]watcher.NotifyChannel, error) {
 		}
 		ch := watcher.NotifyChannel{Type: s[:i], Target: s[i+1:]}
 		switch ch.Type {
-		case "email", "sns":
+		case "email":
+			// Stored normalized, as `lagotto watch` does: the address is the
+			// subscription's filter value and the publish attribute
+			// (lagotto#240), so one spelling throughout.
+			if err := watcher.ValidateEmail(ch.Target); err != nil {
+				return nil, err
+			}
+			ch.Target = watcher.NormalizeEmail(ch.Target)
+		case "sns":
 		case "webhook":
 			if err := watcher.ValidateWebhookURL(ch.Target); err != nil {
 				return nil, fmt.Errorf("invalid webhook URL: %w", err)
@@ -411,6 +419,13 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
+	// Subscribe each email address to the alerts topic (#81, lagotto#240)
+	// before the watch is stored, so an address that cannot be subscribed
+	// refuses the watch instead of arming one whose emails reach no one.
+	emailWarnings, err := subscribeForNewWatch(ctx, cfg, caller, w)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	if err := store.PutWatch(ctx, w); err != nil {
 		return mcp.NewToolResultError("create watch: " + err.Error()), nil
 	}
@@ -438,6 +453,19 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		sb.WriteString("  Note:    hold reserves billable On-Demand capacity on match.\n")
 	}
 	fmt.Fprintf(&sb, "  Expires: %s\n", w.ExpiresAt.Format(time.RFC3339))
+	pending := false
+	for _, ch := range w.NotifyChannels {
+		if ch.Type == "email" && ch.Subscription != "" {
+			fmt.Fprintf(&sb, "  Notify:  email:%s  %s\n", ch.Target, ch.Subscription.Describe())
+			pending = pending || ch.Subscription == watcher.SubPending
+		}
+	}
+	if pending {
+		sb.WriteString("  Note:    AWS has emailed a confirmation link to each pending address; nothing is delivered to it until the link is clicked.\n")
+	}
+	for _, warn := range emailWarnings {
+		fmt.Fprintf(&sb, "  Warning: %s\n", warn)
+	}
 	switch {
 	case pollSched == nil:
 		fmt.Fprintf(&sb, "  Poller:  no hosted poller in this account and region (schedule %s not found), so nothing will poll this watch until you run `lagotto deploy` here, or `lagotto poll --daemon` somewhere that stays up.\n", pollScheduleName())
