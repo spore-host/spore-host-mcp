@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-11-07
+
 ### Added
 
 - **`spawn_task_run` takes `spec_file`, a path to a TaskSpec JSON file, as an
@@ -576,7 +578,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.41.0...v0.42.0
 [0.41.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.40.0...v0.41.0
