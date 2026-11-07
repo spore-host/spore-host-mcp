@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`lagotto_watch` arms a watch with lagotto's own code** (#91). Built against
+  lagotto v0.68.0 (was v0.67.0), which exports the steps `lagotto watch` takes
+  around storing a watch (lagotto#266): `pkg/arm` for the poll-schedule
+  preflight, switch-on and rollback refusal and for the alerts-topic lookup
+  and email subscriptions, and `watcher.NewWatch` for the watch's ID,
+  timestamps and record-retention horizon. The copies this server carried
+  since v0.44.0 are deleted, so the MCP tool and the CLI now run the same
+  code in the same order. Two refusals now use the CLI's wording:
+  - a poll-schedule AccessDenied refusal ends by pointing at lagotto's
+    `docs/reference/cli-iam-actions.md` and lagotto#232, instead of "These are
+    the permissions 'lagotto watch' needs";
+  - an email channel with no alerts topic says "need the alerts topic … (or
+    set LAGOTTO_SNS_TOPIC_ARN)" (was "the lagotto alerts topic … on the MCP
+    server"), and an unresolvable account adds "(sts:GetCallerIdentity
+    failed)". A failed subscription still names the SNS permissions it needs,
+    now after "no watch was created".
+- The test suite's hermetic guard is lagotto's `pkg/testutil/hermetic`
+  (lagotto#266) instead of a copy of it. No user-visible effect.
+
+### Fixed
+
+- **`lagotto_watch` refuses a `ttl` that is not positive** (#92). `ttl: "0s"`
+  (or `"-1h"`) used to store a watch whose expiry was the moment it was
+  created, so it expired on the next poll. It is now refused with "it must be
+  greater than zero", as `lagotto watch --ttl 0` is, before any AWS call.
+
 ## [0.44.0] - 2026-11-07
 
 ### Added

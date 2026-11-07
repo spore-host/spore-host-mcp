@@ -9,9 +9,9 @@ import (
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/scheduler"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	"github.com/spore-host/lagotto/pkg/arm"
 	"github.com/spore-host/lagotto/pkg/watcher"
 )
 
@@ -447,35 +447,33 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	// The ID, timestamps, expiry and the record's retention horizon come from
+	// watcher.NewWatch, as in `lagotto watch` (lagotto#266). It is the one place
+	// expires_at and ttl_timestamp are set together: ttl_timestamp is when
+	// DynamoDB deletes the record, expires_at when lagotto stops watching, and
+	// setting them equal deleted the item at the moment the poller should write
+	// its status=expired tombstone (#77, the MCP repeat of lagotto#161). It also
+	// refuses a TTL that is not positive (#92). Built before any AWS call, so a
+	// refusal costs nothing.
+	w, err := watcher.NewWatch(time.Now(), watcher.Lifetime{TTL: ttl})
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
 	store, cfg, caller, err := lagottoContext(ctx)
 	if err != nil {
 		return mcp.NewToolResultError("failed to connect to AWS: " + err.Error()), nil
 	}
 
-	now := time.Now().UTC()
-	expiresAt := now.Add(ttl)
-	w := &watcher.Watch{
-		WatchID:             "w-" + uuid.New().String()[:8],
-		UserID:              caller,
-		Project:             project,
-		Status:              watcher.StatusActive,
-		Service:             service,
-		InstanceTypePattern: pattern,
-		Regions:             parseRegionList(regionsStr),
-		Spot:                spot,
-		MaxPrice:            maxPrice,
-		Action:              action,
-		NotifyChannels:      channels,
-		CreatedAt:           now,
-		UpdatedAt:           now,
-		ExpiresAt:           expiresAt,
-		// The record's RETENTION horizon, not the watch's TTL (#77, the MCP
-		// repeat of lagotto#161). ttl_timestamp is when DynamoDB deletes the
-		// record; expires_at is when lagotto stops watching. Setting them equal
-		// deletes the item at the moment the poller should write its
-		// status=expired tombstone. RetentionTTL is what the lagotto CLI uses.
-		TTLTimestamp: watcher.RetentionTTL(expiresAt),
-	}
+	w.UserID = caller
+	w.Project = project
+	w.Service = service
+	w.InstanceTypePattern = pattern
+	w.Regions = parseRegionList(regionsStr)
+	w.Spot = spot
+	w.MaxPrice = maxPrice
+	w.Action = action
+	w.NotifyChannels = channels
 
 	// Auto-create the backing tables on first use (zero-setup), like the CLI.
 	if _, err := store.EnsureTables(ctx); err != nil {
@@ -483,12 +481,22 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	}
 
 	// Store the watch and make sure the hosted poller will poll it (#78), in
-	// `lagotto watch`'s order (see pollschedule.go): read the schedule first,
-	// refusing if it can't be read; store; then switch a DISABLED schedule on,
-	// rolling the watch back if that fails.
+	// `lagotto watch`'s order, with the same lagotto code (pkg/arm,
+	// lagotto#266): read the schedule first, refusing if it can't be read;
+	// store; then switch a DISABLED schedule on, rolling the watch back if that
+	// fails.
+	//
+	// The hosted poller switches its own schedule OFF when there are no active
+	// watches, so a watch is only polled if whatever creates it switches the
+	// schedule back on. Storing first and enabling second means a poller run
+	// that starts after the enable always sees the watch; the other order lets
+	// a run that starts in between find no watch and switch the schedule
+	// straight back off. A schedule that is not found means no hosted poller is
+	// deployed: the watch is stored (for `lagotto poll --daemon`) and the result
+	// says so. Any other read error, AccessDenied included, refuses the watch.
 	sched := scheduler.NewFromConfig(cfg)
 	armAction := "create watch " + w.WatchID
-	pollSched, err := pollSchedulePreflight(ctx, sched, armAction)
+	pollSched, err := arm.PreflightPollSchedule(ctx, sched, armAction)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -502,13 +510,13 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	if err := store.PutWatch(ctx, w); err != nil {
 		return mcp.NewToolResultError("create watch: " + err.Error()), nil
 	}
-	enabled, err := enablePollScheduleIfOff(ctx, sched, pollSched)
+	enabled, err := arm.EnablePollScheduleIfOff(ctx, sched, pollSched)
 	if err != nil {
 		// Roll back through PutWatch, the call (and dynamodb:PutItem permission)
 		// that just created it, so the rollback needs nothing the caller lacks.
 		w.Status = watcher.StatusCancelled
 		w.UpdatedAt = time.Now().UTC()
-		return mcp.NewToolResultError(pollScheduleUpdateRefusal(armAction, store.PutWatch(ctx, w), err).Error()), nil
+		return mcp.NewToolResultError(arm.PollScheduleUpdateRefusal(armAction, "no watch was created", store.PutWatch(ctx, w), err).Error()), nil
 	}
 
 	auditLog("lagotto_watch", w.WatchID, "", "")
@@ -541,7 +549,7 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 	}
 	switch {
 	case pollSched == nil:
-		fmt.Fprintf(&sb, "  Poller:  no hosted poller in this account and region (schedule %s not found), so nothing will poll this watch until you run `lagotto deploy` here, or `lagotto poll --daemon` somewhere that stays up.\n", pollScheduleName())
+		fmt.Fprintf(&sb, "  Poller:  no hosted poller in this account and region (schedule %s not found), so nothing will poll this watch until you run `lagotto deploy` here, or `lagotto poll --daemon` somewhere that stays up.\n", arm.PollScheduleName())
 	case enabled:
 		fmt.Fprintf(&sb, "  Poller:  switched the hosted poller's schedule %s back on (it turns itself off when no watches are active).\n", awssdk.ToString(pollSched.Name))
 	default:
