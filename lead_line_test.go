@@ -23,7 +23,8 @@ import (
 func TestToolResultsLeadWithTheSummaryLine(t *testing.T) {
 	const taskSpec = `{"task_id":"era5-2023","command":["python","run.py"],"resources":{"cpu":8,"memory_gib":64},"lifecycle":{"ttl":"45m"}}`
 	// desktop needs no image, so it plans from the embedded catalog alone; an
-	// image-less application such as desktopApp plans only with a user overlay.
+	// image-less application such as paraview plans only with a user overlay,
+	// which a developer's machine may have and CI does not.
 	desktopApp, ok := catalog.Lookup("desktop")
 	if !ok {
 		t.Fatal("desktop is not in the catalog")
