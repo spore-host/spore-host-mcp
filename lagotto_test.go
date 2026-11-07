@@ -33,6 +33,8 @@ func TestLagottoWatch_ValidationBeforeAWS(t *testing.T) {
 		{"spawn action deferred", map[string]any{"pattern": "g5.xlarge", "action": "spawn"}, "action=spawn is not supported"},
 		{"invalid action", map[string]any{"pattern": "g5.xlarge", "action": "bogus"}, "invalid action"},
 		{"invalid ttl", map[string]any{"pattern": "g5.xlarge", "ttl": "banana"}, "invalid ttl"},
+		{"zero ttl", map[string]any{"pattern": "g5.xlarge", "ttl": "0s"}, "must be greater than zero"},
+		{"negative ttl", map[string]any{"pattern": "g5.xlarge", "ttl": "-1h"}, "must be greater than zero"},
 		{"bad notify", map[string]any{"pattern": "g5.xlarge", "notify": "no-colon-here"}, "invalid notify"},
 	}
 	for _, tc := range cases {
@@ -104,6 +106,35 @@ func TestParseRegionList(t *testing.T) {
 func TestWatchActionsExist(t *testing.T) {
 	if watcher.ActionNotify != "notify" || watcher.ActionHold != "hold" {
 		t.Errorf("unexpected action constants: notify=%q hold=%q", watcher.ActionNotify, watcher.ActionHold)
+	}
+}
+
+// TestLagottoWatch_NonPositiveTTLRefusedBeforeAWS is #92's bug: ttl "0s" used
+// to store a watch whose expires_at was now, so it expired on the next poll.
+// watcher.NewWatch refuses it, as `lagotto watch --ttl 0` does, and the
+// refusal comes before any AWS call, so nothing is stored.
+func TestLagottoWatch_NonPositiveTTLRefusedBeforeAWS(t *testing.T) {
+	for _, ttl := range []string{"0s", "0", "-1h", "0d"} {
+		t.Run(ttl, func(t *testing.T) {
+			f := newFakeAWS(t)
+			f.schedule = pollerSchedule("ENABLED")
+			f.install(t)
+			res, err := handleLagottoWatch(context.Background(), newRequest(map[string]any{
+				"pattern": "g5.xlarge", "action": "notify", "ttl": ttl,
+			}))
+			if err != nil {
+				t.Fatalf("transport error: %v", err)
+			}
+			if !res.IsError {
+				t.Fatalf("ttl %q accepted:\n%s", ttl, resultText(res))
+			}
+			if !strings.Contains(resultText(res), "greater than zero") {
+				t.Errorf("refusal %q does not say the TTL must be positive", resultText(res))
+			}
+			if len(f.actions) != 0 {
+				t.Errorf("AWS calls %v before the TTL was refused, want none", f.actions)
+			}
+		})
 	}
 }
 

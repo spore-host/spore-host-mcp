@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/spore-host/lagotto/pkg/testutil/hermetic"
 	spawnclient "github.com/spore-host/spawn/pkg/aws"
 )
 
@@ -421,22 +422,38 @@ func contains(xs []string, x string) bool {
 // through the spawnClient seam (the spawn tools and, since #79, the lagotto
 // tools) at an empty fakeAWS unless a test installs its own, so the handler
 // smoke tests that used to call real AWS when the environment had credentials
-// cannot. And it installs the hermetic environment (hermetic_test.go), so a
-// client built any other way reaches a loopback recorder that fails the binary,
-// not a real account.
+// cannot. And it installs lagotto's hermetic environment
+// (pkg/testutil/hermetic, lagotto#214/#266), so a client built any other way
+// reaches a loopback recorder that fails the binary, not a real account.
+//
+// That environment strips AWS_*, SPORE_* and XDG_CONFIG_HOME and sets fake
+// credentials, AWS_ENDPOINT_URL and HTTP(S)_PROXY to the recorder. This
+// package also strips LAGOTTO_* first, since LAGOTTO_SNS_TOPIC_ARN and
+// LAGOTTO_SCHEDULE_NAME change which topic and schedule lagotto_watch touches
+// (#78, #81), and sets the region the fakes answer in, after Install so it
+// survives.
 func TestMain(m *testing.M) {
-	rec, err := installHermeticEnv()
+	for _, kv := range os.Environ() {
+		if k, _, _ := strings.Cut(kv, "="); strings.HasPrefix(strings.ToUpper(k), "LAGOTTO_") {
+			_ = os.Unsetenv(k)
+		}
+	}
+	rec, err := hermetic.Install()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hermetic: %v\n", err)
 		os.Exit(2)
 	}
+	_ = os.Setenv("AWS_REGION", "us-west-2")
 	hermeticGuard = rec
 	empty := &fakeAWS{account: "123456789012", objects: map[string]string{}}
 	spawnClient = func(context.Context) (*spawnclient.Client, error) { return empty.client(), nil }
 	code := m.Run()
-	if rec.report(os.Stderr) {
+	if rec.Report(os.Stderr, "this test binary") {
 		code = 1
 	}
 	rec.Close()
 	os.Exit(code)
 }
+
+// hermeticGuard is the running recorder, for the guard's self-test.
+var hermeticGuard *hermetic.Recorder

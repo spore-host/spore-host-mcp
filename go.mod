@@ -7,10 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.4
 	github.com/aws/aws-sdk-go-v2/service/sns v1.47.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
-	github.com/aws/smithy-go v1.28.5
-	github.com/google/uuid v1.6.0
 	github.com/mark3labs/mcp-go v1.3.0
-	github.com/spore-host/lagotto v0.67.0
+	github.com/spore-host/lagotto v0.68.0
 	github.com/spore-host/libs v0.51.4
 	github.com/spore-host/spawn v0.161.0
 	github.com/spore-host/truffle v0.63.0
@@ -60,6 +58,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/xray v1.36.23 // indirect
+	github.com/aws/smithy-go v1.28.5 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -96,6 +95,7 @@ require (
 	github.com/google/certificate-transparency-go v1.3.3 // indirect
 	github.com/google/go-containerregistry v0.21.7 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
 	github.com/in-toto/attestation v1.2.0 // indirect
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect

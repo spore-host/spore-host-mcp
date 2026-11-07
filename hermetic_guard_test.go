@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/spore-host/lagotto/pkg/testutil/hermetic"
 	spawnclient "github.com/spore-host/spawn/pkg/aws"
 )
 
@@ -19,7 +20,7 @@ func TestHermeticGuard_CatchesAnUnfakedClient(t *testing.T) {
 	if hermeticGuard == nil {
 		t.Fatal("TestMain did not install the hermetic guard")
 	}
-	if got := os.Getenv("AWS_ACCESS_KEY_ID"); got != hermeticFakeAccessKeyID {
+	if got := os.Getenv("AWS_ACCESS_KEY_ID"); got != hermetic.FakeAccessKeyID {
 		t.Fatalf("AWS_ACCESS_KEY_ID = %q, want the hermetic fake", got)
 	}
 	if os.Getenv("AWS_PROFILE") != "" {
@@ -34,7 +35,7 @@ func TestHermeticGuard_CatchesAnUnfakedClient(t *testing.T) {
 	if err == nil {
 		t.Fatal("GetCallerIdentity through an unfaked client succeeded; it must be refused")
 	}
-	seen := hermeticGuard.take()
+	seen := hermeticGuard.Take()
 	if len(seen) == 0 {
 		t.Fatalf("the recorder saw nothing; the request went elsewhere (err: %v)", err)
 	}
