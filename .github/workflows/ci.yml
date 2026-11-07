@@ -22,8 +22,22 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.3'
           cache: true
+      # Build-output ignore gate (#72). GoReleaser writes into dist/ inside the
+      # checkout; if dist/ isn't ignored, Go's VCS stamping counts it as an
+      # untracked modification and every release binary reads "+dirty". Probe
+      # it: create dist/probe and fail if git sees anything untracked.
+      - name: Build-output ignore gate
+        run: |
+          mkdir -p dist && : > dist/probe
+          dirty=$(git status --porcelain --untracked-files=all)
+          rm -rf dist
+          if [ -n "$dirty" ]; then
+            echo "::error::build output is not gitignored, so release binaries would be stamped +dirty:"
+            echo "$dirty" | sed 's/^/  /'
+            exit 1
+          fi
       # Formatting gate (#26). Runs first because it's the cheapest check and the
       # fastest to act on. Nothing checked formatting before — this repo had no
       # Makefile, so there wasn't even a local `fmt` target anyone might run. The
@@ -161,19 +175,19 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.10'
+          go-version: '1.27.3'
 
       # Pinned version AND pinned hash: a version with no hash runs a replaced
       # release asset unnoticed, and the hash lives HERE rather than being read
       # from the release's checksums.txt, because a file fetched alongside the
       # download can be replaced alongside it. Cross-checked against
-      # golangci-lint-2.14.0-checksums.txt when pinned. Keep VER in step with
+      # golangci-lint-2.15.0-checksums.txt when pinned. Keep VER in step with
       # GOLANGCI_LINT_VERSION in the Makefile (ci_gates_test.go checks). Bumping
       # the version can surface new findings; fix them in the same PR.
       - name: Install golangci-lint
         run: |
-          VER=2.14.0
-          SHA256=ab90aeb7b066f92a33415b638a50fe5344bbb75a0d32ad30cc248d88f81032ab
+          VER=2.15.0
+          SHA256=9b7fe6a6bf6334b98decf8d86b11415ea7889afdabdd1959fdce23af2a9ebcea
           T="golangci-lint-${VER}-linux-amd64.tar.gz"
           curl -sSLf -o "/tmp/$T" "https://github.com/golangci/golangci-lint/releases/download/v${VER}/$T"
           echo "$SHA256  /tmp/$T" | sha256sum -c -
