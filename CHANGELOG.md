@@ -24,7 +24,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lagotto_watch` test cannot write a real watch with a developer's
   credentials.
 
+- **CI builds with Go 1.27.3** (from 1.26.10) and golangci-lint 2.15.0 (from
+  2.14.0; the older binary can't read Go 1.27 export data), per the org-wide
+  pin move (spore-host#609). `go.mod` still says `go 1.26.0`, so importers are
+  not forced onto 1.27.
 ### Fixed
+
+- **Release binaries are no longer stamped `+dirty`** (#72). GoReleaser writes
+  into `dist/` inside the checkout and `dist/` wasn't gitignored, so Go's VCS
+  stamping counted it as an untracked modification: `go version -m` showed
+  `v0.4x.0+dirty` and `vcs.modified=true` on every release binary (checksums
+  and `--version` were always right). `dist/` is now ignored, and a CI gate
+  creates `dist/probe` and fails if git sees anything untracked.
 
 - **`lagotto_watch` no longer arms DynamoDB to delete the watch record the
   moment the watch expires** (#77, the MCP repeat of lagotto#161). It wrote

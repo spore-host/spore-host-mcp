@@ -1,1 +1,4 @@
 spore-host-mcp
+
+# GoReleaser output (#72): untracked files here make release binaries +dirty.
+dist/

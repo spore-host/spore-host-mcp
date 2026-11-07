@@ -17,7 +17,7 @@ vet:
 # Keep in step with the version pinned in .github/workflows/ci.yml (Lint job).
 # No .golangci.yml today, so golangci-lint's built-in defaults apply; one at the
 # repo root would be picked up automatically, by CI and locally alike.
-GOLANGCI_LINT_VERSION=2.14.0
+GOLANGCI_LINT_VERSION=2.15.0
 lint:
 	@echo "Running linter..."
 	@which golangci-lint > /dev/null || (echo "golangci-lint not installed. Run: curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/v$(GOLANGCI_LINT_VERSION)/install.sh | sh -s -- -b $$(go env GOPATH)/bin v$(GOLANGCI_LINT_VERSION)" && exit 1)
