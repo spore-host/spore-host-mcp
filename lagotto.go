@@ -387,7 +387,12 @@ func handleLagottoWatch(ctx context.Context, req mcp.CallToolRequest) (*mcp.Call
 		CreatedAt:           now,
 		UpdatedAt:           now,
 		ExpiresAt:           expiresAt,
-		TTLTimestamp:        expiresAt.Unix(),
+		// The record's RETENTION horizon, not the watch's TTL (#77, the MCP
+		// repeat of lagotto#161). ttl_timestamp is when DynamoDB deletes the
+		// record; expires_at is when lagotto stops watching. Setting them equal
+		// deletes the item at the moment the poller should write its
+		// status=expired tombstone. RetentionTTL is what the lagotto CLI uses.
+		TTLTimestamp: watcher.RetentionTTL(expiresAt),
 	}
 
 	// Auto-create the backing tables on first use (zero-setup), like the CLI.
