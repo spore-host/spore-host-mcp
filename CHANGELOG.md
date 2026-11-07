@@ -47,6 +47,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account and region. In the last case the watch is still stored, and nothing
   polls it until you run `lagotto deploy` or `lagotto poll --daemon`.
   `LAGOTTO_SCHEDULE_NAME` overrides the schedule name, as in the CLI.
+- **`lagotto_watch` `email:` channels deliver again** (#81). Since lagotto#240,
+  an email event only reaches an address that has its own filtered
+  subscription on the alerts topic. `lagotto watch` creates that
+  subscription and `lagotto_watch` did not, so an MCP-created email channel
+  stored the address and delivered nothing. Before storing the watch,
+  `lagotto_watch` now subscribes each address to `lagotto-capacity-alerts`
+  in the caller's account and region (or to `LAGOTTO_SNS_TOPIC_ARN`). The
+  subscription is filtered to that address, uses lagotto's own code, and
+  every call goes to the topic ARN's region. An address that already has a
+  subscription reuses it. Addresses are validated and stored lower-cased, as
+  in the CLI. With no alerts topic, or if the subscription can't be created,
+  the watch is refused and nothing is stored; the error names `lagotto
+  deploy` or the permissions needed (`sns:Subscribe`,
+  `sns:ListSubscriptionsByTopic`, `sns:GetSubscriptionAttributes`). The
+  result shows each address's state and says that a new subscription
+  receives nothing until its owner clicks the confirmation link AWS emails.
+  No cleanup is needed here: the hosted poller unsubscribes an address once
+  no active watch names it.
 
 ### Security
 

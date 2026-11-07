@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/service/scheduler v1.25.4
+	github.com/aws/aws-sdk-go-v2/service/sns v1.47.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4
 	github.com/aws/smithy-go v1.28.5
 	github.com/google/uuid v1.6.0
@@ -54,7 +55,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sagemaker v1.284.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicequotas v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.10.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sns v1.47.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.27 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.79.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect

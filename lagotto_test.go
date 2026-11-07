@@ -312,3 +312,217 @@ func TestLagottoWatch_EnableFailureRollsBack(t *testing.T) {
 		}
 	}
 }
+
+const fakeAlertsTopic = "arn:aws:sns:us-west-2:123456789012:lagotto-capacity-alerts"
+
+func createEmailWatch(t *testing.T, notify string) (string, bool) {
+	t.Helper()
+	res, err := handleLagottoWatch(context.Background(), newRequest(map[string]any{
+		"pattern": "g5.xlarge", "action": "notify", "ttl": "24h", "notify": notify,
+	}))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	return resultText(res), res.IsError
+}
+
+// storedNotifyTargets is the notify_channels the stored watch carries.
+func storedNotifyTargets(t *testing.T, item map[string]map[string]any) []string {
+	t.Helper()
+	var out []string
+	list, _ := item["notify_channels"]["L"].([]any)
+	for _, e := range list {
+		m, _ := e.(map[string]any)["M"].(map[string]any)
+		typ, _ := m["type"].(map[string]any)["S"].(string)
+		target, _ := m["target"].(map[string]any)["S"].(string)
+		if _, stored := m["subscription"]; stored {
+			t.Errorf("channel %s:%s stored its subscription state; it is display-only", typ, target)
+		}
+		out = append(out, typ+":"+target)
+	}
+	return out
+}
+
+// TestLagottoWatch_EmailSubscribesTheAddress is #81: an email channel only
+// delivers once the address has its own filtered subscription on the alerts
+// topic (lagotto#240). lagotto_watch creates it before storing the watch, with
+// the address normalized and lagotto's filter policy, and reports it pending.
+func TestLagottoWatch_EmailSubscribesTheAddress(t *testing.T) {
+	f := newFakeAWS(t)
+	f.snsTopic = fakeAlertsTopic
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email: Alice@Example.COM ")
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.snsSubscribes) != 1 {
+		t.Fatalf("Subscribe calls = %d, want 1 (actions %v)", len(f.snsSubscribes), f.actions)
+	}
+	sub := f.snsSubscribes[0]
+	if sub.Get("TopicArn") != fakeAlertsTopic || sub.Get("Protocol") != "email" || sub.Get("Endpoint") != "alice@example.com" {
+		t.Errorf("Subscribe = %v, want email alice@example.com on %s", sub, fakeAlertsTopic)
+	}
+	attrs := snsSubscribeAttrs(sub)
+	if want := watcher.EmailFilterPolicy("alice@example.com"); attrs["FilterPolicy"] != want {
+		t.Errorf("FilterPolicy = %q, want %q", attrs["FilterPolicy"], want)
+	}
+	if attrs["FilterPolicyScope"] != "MessageAttributes" {
+		t.Errorf("FilterPolicyScope = %q, want MessageAttributes", attrs["FilterPolicyScope"])
+	}
+	if s, p := indexOf(f.actions, "sns:Subscribe"), indexOf(f.actions, "dynamodb:PutItem"); s < 0 || s > p {
+		t.Errorf("order = %v, want Subscribe before PutItem", f.actions)
+	}
+	if got := storedNotifyTargets(t, putWatchItem(t, f)); len(got) != 1 || got[0] != "email:alice@example.com" {
+		t.Errorf("stored channels = %v, want [email:alice@example.com]", got)
+	}
+	for _, want := range []string{"email:alice@example.com", "pending confirmation", "confirmation link"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestLagottoWatch_EmailReusesAConfirmedSubscription: an address that already
+// has its subscription is not subscribed again, and shows as confirmed.
+func TestLagottoWatch_EmailReusesAConfirmedSubscription(t *testing.T) {
+	f := newFakeAWS(t)
+	f.snsTopic = fakeAlertsTopic
+	f.snsSubs = []fakeSNSSub{{endpoint: "bob@example.com", confirmed: true, filterPolicy: watcher.EmailFilterPolicy("bob@example.com")}}
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email:bob@example.com")
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.snsSubscribes) != 0 {
+		t.Errorf("subscribed an address that already has a subscription: %v", f.snsSubscribes)
+	}
+	if !strings.Contains(text, "email:bob@example.com  confirmed") {
+		t.Errorf("result does not show the confirmed subscription:\n%s", text)
+	}
+	if strings.Contains(text, "Warning:") {
+		t.Errorf("warned about a filtered subscription:\n%s", text)
+	}
+}
+
+// TestLagottoWatch_EmailWarnsAboutAnUnfilteredSubscription: an existing
+// hand-made subscription with no filter policy is reused and left alone, but
+// the caller is told it receives every user's email events.
+func TestLagottoWatch_EmailWarnsAboutAnUnfilteredSubscription(t *testing.T) {
+	f := newFakeAWS(t)
+	f.snsTopic = fakeAlertsTopic
+	f.snsSubs = []fakeSNSSub{{endpoint: "carol@example.com", confirmed: true}}
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email:carol@example.com")
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.snsSubscribes) != 0 {
+		t.Errorf("subscribed again: %v", f.snsSubscribes)
+	}
+	if !strings.Contains(text, "NO filter policy") {
+		t.Errorf("no unfiltered-subscription warning:\n%s", text)
+	}
+}
+
+// TestLagottoWatch_EmailWithNoAlertsTopicRefuses: with no topic there is
+// nothing to subscribe to and the email would reach no one, so the watch is
+// refused and nothing is stored.
+func TestLagottoWatch_EmailWithNoAlertsTopicRefuses(t *testing.T) {
+	f := newFakeAWS(t)
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email:dave@example.com")
+	if !isErr {
+		t.Fatalf("lagotto_watch succeeded with no alerts topic:\n%s", text)
+	}
+	if len(f.ddbPuts) != 0 || len(f.snsSubscribes) != 0 {
+		t.Errorf("stored %d item(s), %d Subscribe(s) after refusing", len(f.ddbPuts), len(f.snsSubscribes))
+	}
+	for _, want := range []string{"lagotto deploy", "does not exist", "no watch was created"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestLagottoWatch_EmailSubscribeFailureRefuses: a Subscribe that fails
+// (AuthorizationError here) refuses the watch, naming the permissions.
+func TestLagottoWatch_EmailSubscribeFailureRefuses(t *testing.T) {
+	f := newFakeAWS(t)
+	f.snsTopic = fakeAlertsTopic
+	f.snsSubscribeErr = "AuthorizationError"
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email:erin@example.com")
+	if !isErr {
+		t.Fatalf("lagotto_watch succeeded although Subscribe failed:\n%s", text)
+	}
+	if len(f.ddbPuts) != 0 {
+		t.Errorf("stored %d item(s) after Subscribe failed", len(f.ddbPuts))
+	}
+	for _, want := range []string{"subscribe erin@example.com", "sns:Subscribe", "no watch was created"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("refusal missing %q:\n%s", want, text)
+		}
+	}
+}
+
+// TestLagottoWatch_EmailUsesTheTopicARNsRegion: LAGOTTO_SNS_TOPIC_ARN may name
+// a topic in another region than the caller's, and SNS rejects a topic ARN
+// from another region, so every subscription call goes to the ARN's region.
+func TestLagottoWatch_EmailUsesTheTopicARNsRegion(t *testing.T) {
+	const east = "arn:aws:sns:us-east-1:123456789012:team-alerts"
+	t.Setenv("LAGOTTO_SNS_TOPIC_ARN", east)
+	f := newFakeAWS(t)
+	f.snsTopic = east
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "email:frank@example.com")
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.snsCalls) == 0 {
+		t.Fatal("no SNS calls")
+	}
+	for _, c := range f.snsCalls {
+		if !strings.HasSuffix(c, "@us-east-1") {
+			t.Errorf("SNS call %s, want every call in the topic's region us-east-1 (client region us-west-2)", c)
+		}
+	}
+	if len(f.snsSubscribes) != 1 || f.snsSubscribes[0].Get("TopicArn") != east {
+		t.Errorf("Subscribe = %v, want one on %s", f.snsSubscribes, east)
+	}
+}
+
+// TestLagottoWatch_NoEmailNoSNS: a watch with no email channel makes no SNS
+// call at all (webhook and sns channels name their own target).
+func TestLagottoWatch_NoEmailNoSNS(t *testing.T) {
+	f := newFakeAWS(t)
+	f.install(t)
+
+	text, isErr := createEmailWatch(t, "webhook:https://example.com/hook,sns:arn:aws:sns:us-west-2:123456789012:mine")
+	if isErr {
+		t.Fatalf("lagotto_watch failed: %s", text)
+	}
+	if len(f.snsCalls) != 0 {
+		t.Errorf("SNS calls for a watch with no email channel: %v", f.snsCalls)
+	}
+}
+
+// TestParseNotifyChannels_EmailValidatedAndNormalized mirrors `lagotto watch`:
+// an unsubscribable address is rejected before AWS, and a good one is stored
+// trimmed and lower-cased.
+func TestParseNotifyChannels_EmailValidatedAndNormalized(t *testing.T) {
+	chs, err := parseNotifyChannels("email:Grace@Example.com")
+	if err != nil || len(chs) != 1 || chs[0].Target != "grace@example.com" {
+		t.Errorf("parse = %+v, %v; want one channel grace@example.com", chs, err)
+	}
+	for _, bad := range []string{"email:no-at-sign", "email:a b@example.com", "email:@example.com"} {
+		if _, err := parseNotifyChannels(bad); err == nil {
+			t.Errorf("parseNotifyChannels(%q) accepted an invalid address", bad)
+		}
+	}
+}

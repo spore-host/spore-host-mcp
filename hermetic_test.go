@@ -25,7 +25,7 @@ import (
 // once wrote a real watch to a live account). So TestMain also installs this
 // environment, which:
 //
-//   - strips every AWS_* and SPORE_* variable and sets obviously fake static
+//   - strips every AWS_*, SPORE_* and LAGOTTO_* variable and sets obviously fake static
 //     credentials, AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE to /dev/null,
 //     AWS_EC2_METADATA_DISABLED, and XDG_CONFIG_HOME to /dev/null (the shared
 //     spore.host config file can name a profile), so nothing can authenticate
@@ -50,7 +50,9 @@ const hermeticLoopback = "localhost,127.0.0.1,::1"
 
 func hermeticDropped(k string) bool {
 	u := strings.ToUpper(k)
-	return strings.HasPrefix(u, "AWS_") || strings.HasPrefix(u, "SPORE_") ||
+	// LAGOTTO_* too: LAGOTTO_SNS_TOPIC_ARN and LAGOTTO_SCHEDULE_NAME change
+	// which topic and schedule lagotto_watch touches (#78, #81).
+	return strings.HasPrefix(u, "AWS_") || strings.HasPrefix(u, "SPORE_") || strings.HasPrefix(u, "LAGOTTO_") ||
 		u == "XDG_CONFIG_HOME" ||
 		u == "HTTP_PROXY" || u == "HTTPS_PROXY" || u == "ALL_PROXY" || u == "NO_PROXY"
 }
