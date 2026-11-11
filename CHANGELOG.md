@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.45.1] - 2026-11-11
+
 ### Security
 
 - Build and test with Go 1.26.11 / 1.27.4: GO-2026-6859 (net/http: an HTTP/1 server crash from a `MaxBytesReader` header race), published 2026-11-11.
@@ -657,7 +659,8 @@ Baseline. Earlier history is in the
 
 ---
 
-[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/spore-host/spore-host-mcp/compare/v0.45.1...HEAD
+[0.45.1]: https://github.com/spore-host/spore-host-mcp/compare/v0.45.0...v0.45.1
 [0.45.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/spore-host/spore-host-mcp/compare/v0.42.0...v0.43.0
