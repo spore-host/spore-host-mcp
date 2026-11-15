@@ -17,6 +17,7 @@ Works with Claude Desktop, Cursor, and any other client that supports the [Model
 
 **macOS / Linux (Homebrew)**
 ```bash
+brew tap spore-host/tap && brew trust spore-host/tap
 brew install spore-host/tap/spore-host-mcp
 ```
 
