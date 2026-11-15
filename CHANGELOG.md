@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Homebrew: releases now publish a cask, `spore-host/tap/spore-host-mcp`, instead of a
+  formula. GoReleaser deprecated formulas for prebuilt binaries, and casks
+  install on Linux too. The formula stays in the tap until a later tap change
+  moves existing installs to the cask (spore-host/spore-host#747).
+
 ### Added
 
 - `SECURITY.md`: report vulnerabilities privately through GitHub's private vulnerability reporting (the repository's Security tab), not public issues.
