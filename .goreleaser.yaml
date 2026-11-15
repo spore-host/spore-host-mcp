@@ -88,19 +88,30 @@ nfpms:
     rpm:
       summary: "MCP server for AI assistants — manage EC2 instances and discover capacity"
 
-brews:
+# A cask, not a formula (spore-host/spore-host#747): GoReleaser deprecated
+# `brews:` for prebuilt binaries in v2.10, and `goreleaser check` fails on it.
+# Casks install on Linux too. The binaries are not notarized, so the
+# post-install hook clears macOS's quarantine bit, without which Gatekeeper
+# blocks them. tap_migrations.json moves formula users here once this cask is
+# published.
+homebrew_casks:
   - name: spore-host-mcp
+    binaries: [spore-host-mcp]
     repository:
       owner: spore-host
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
     homepage: https://github.com/spore-host/spore-host-mcp
     description: "MCP server for AI assistants — manage EC2 instances and discover capacity"
     license: Apache-2.0
-    install: |
-      bin.install "spore-host-mcp"
+    skip_upload: auto
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/spore-host-mcp"]
+          end
 
 scoops:
   - name: spore-host-mcp
